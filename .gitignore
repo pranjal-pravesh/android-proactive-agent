@@ -214,6 +214,7 @@ app.*.map.json
 # *.onnx
 # *.tflite
 # *.pb
-
+WhisperCpp_Kotlin_Integration_Complete_Guide.md
+whisper.cpp-master/
 # Keep our Silero VAD model
 !app/src/main/assets/silero_vad.onnx
