@@ -17,18 +17,16 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // ADDED: Block to configure the native C++ build
+        // Native C++ build configuration for whisper.cpp
         externalNativeBuild {
             cmake {
-                // Pass arguments to the C++ compiler. -std=c++17 is a good standard.
                 cppFlags("-std=c++17")
             }
         }
 
-        // ADDED: Block to specify which CPU architectures to build for.
-        // 'arm64-v8a' is required for all modern 64-bit Android devices.
+        // CPU architectures for whisper.cpp
         ndk {
-            abiFilters.add("arm64-v8a")
+            abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64"))
         }
     }
 
@@ -52,14 +50,14 @@ android {
         compose = true
     }
 
-    // ADDED: This links your Gradle project to your C++ build script.
+    // Link to whisper.cpp CMake build script
     externalNativeBuild {
         cmake {
-            // Tells Gradle where to find the instructions for building your C++ code.
-            // You will need to create this file.
-            path = file("src/main/cpp/CMakeLists.txt")
+            path = file("src/main/jni/whisper/CMakeLists.txt")
         }
     }
+    
+    ndkVersion = "25.2.9519653"
 }
 
 dependencies {

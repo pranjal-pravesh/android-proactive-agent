@@ -5,20 +5,26 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.*
-import com.example.proactiiveagentv1.detection.VoiceDetectionManager
+import androidx.lifecycle.lifecycleScope
+import com.example.proactiiveagentv1.detection.EnhancedVoiceDetectionManager
 import com.example.proactiiveagentv1.permissions.PermissionManager
-import com.example.proactiiveagentv1.ui.VoiceDetectionScreen
+import com.example.proactiiveagentv1.ui.EnhancedVoiceDetectionScreen
+import com.example.proactiiveagentv1.whisper.WhisperSegment
+import kotlinx.coroutines.launch
 import com.example.proactiiveagentv1.ui.theme.ProactiiveAgentV1Theme
 
 class MainActivity : ComponentActivity() {
     private lateinit var permissionManager: PermissionManager
-    private lateinit var voiceDetectionManager: VoiceDetectionManager
+    private lateinit var voiceDetectionManager: EnhancedVoiceDetectionManager
     
     // UI State
     private var isListening = mutableStateOf(false)
     private var isSpeaking = mutableStateOf(false)
     private var vadConfidence = mutableFloatStateOf(0f)
     private var isModelLoaded = mutableStateOf(false)
+    private var isTranscriptionReady = mutableStateOf(false)
+    private var transcriptionText = mutableStateOf("")
+    private var transcriptionSegments = mutableStateOf<List<WhisperSegment>>(emptyList())
     
     // Detection parameters
     private val vadThreshold = 0.5f
@@ -31,11 +37,14 @@ class MainActivity : ComponentActivity() {
         
         setContent {
             ProactiiveAgentV1Theme {
-                VoiceDetectionScreen(
+                EnhancedVoiceDetectionScreen(
                     isListening = isListening.value,
                     isSpeaking = isSpeaking.value,
                     vadConfidence = vadConfidence.floatValue,
                     isModelLoaded = isModelLoaded.value,
+                    isTranscriptionReady = isTranscriptionReady.value,
+                    transcriptionText = transcriptionText.value,
+                    transcriptionSegments = transcriptionSegments.value,
                     vadThreshold = vadThreshold,
                     onStartDetection = { startVoiceDetection() },
                     onStopDetection = { stopVoiceDetection() }
@@ -54,8 +63,8 @@ class MainActivity : ComponentActivity() {
             }
         }
         
-        // Initialize voice detection manager
-        voiceDetectionManager = VoiceDetectionManager(
+        // Initialize enhanced voice detection manager
+        voiceDetectionManager = EnhancedVoiceDetectionManager(
             context = this,
             onVoiceActivityUpdate = { confidence ->
                 vadConfidence.floatValue = confidence
@@ -68,6 +77,14 @@ class MainActivity : ComponentActivity() {
             },
             onSpeechEnded = {
                 onSpeechEnded()
+            },
+            onTranscriptionResult = { text, segments ->
+                transcriptionText.value = text
+                transcriptionSegments.value = segments
+            },
+            onTranscriptionError = { error ->
+                // Handle transcription errors
+                transcriptionText.value = "Error: $error"
             }
         )
     }
@@ -77,8 +94,11 @@ class MainActivity : ComponentActivity() {
     }
     
     private fun setupVoiceDetection() {
-        val initialized = voiceDetectionManager.initialize()
-        isModelLoaded.value = initialized && voiceDetectionManager.isModelInitialized()
+        lifecycleScope.launch {
+            val initialized = voiceDetectionManager.initialize(enableTranscription = true)
+            isModelLoaded.value = initialized && voiceDetectionManager.isModelInitialized()
+            isTranscriptionReady.value = initialized && voiceDetectionManager.isTranscriptionReady()
+        }
     }
     
     private fun startVoiceDetection() {
@@ -87,11 +107,13 @@ class MainActivity : ComponentActivity() {
             return
         }
         
-        val started = voiceDetectionManager.startDetection()
+        val started = voiceDetectionManager.startDetection(enableTranscription = true)
         if (started) {
             isListening.value = true
             isSpeaking.value = false
             vadConfidence.floatValue = 0f
+            transcriptionText.value = ""
+            transcriptionSegments.value = emptyList()
         }
     }
     
