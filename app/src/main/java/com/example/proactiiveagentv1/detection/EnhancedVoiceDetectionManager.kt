@@ -4,6 +4,7 @@ import android.content.Context
 import com.example.proactiiveagentv1.audio.AudioManager
 import com.example.proactiiveagentv1.vad.SileroVADProcessor
 import com.example.proactiiveagentv1.transcription.LiveTranscriptionManager
+import com.example.proactiiveagentv1.transcription.ONNXTranscriptionManager
 import com.example.proactiiveagentv1.whisper.WhisperSegment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -55,6 +56,21 @@ class EnhancedVoiceDetectionManager(
         )
     }
     
+    // ONNX transcription manager as primary transcription method
+    private val onnxTranscriptionManager = ONNXTranscriptionManager(
+        context = context,
+        onTranscriptionResult = { transcription ->
+            CoroutineScope(Dispatchers.Main).launch {
+                onTranscriptionResult("📝 $transcription", emptyList())
+            }
+        },
+        onError = { error ->
+            CoroutineScope(Dispatchers.Main).launch {
+                onTranscriptionError("❌ $error")
+            }
+        }
+    )
+    
     suspend fun initialize(enableTranscription: Boolean = true): Boolean {
         val audioInitialized = audioManager.initialize()
         val vadInitialized = vadProcessor.initialize()
@@ -65,7 +81,20 @@ class EnhancedVoiceDetectionManager(
         
         var transcriptionInitialized = true
         if (enableTranscription) {
-            transcriptionInitialized = transcriptionManager.initialize()
+            // Try ONNX transcription first (full precision models should work well)
+            android.util.Log.i("EnhancedVoiceDetectionManager", "🚀 Trying ONNX full precision transcription...")
+            transcriptionInitialized = onnxTranscriptionManager.initialize()
+            
+            if (!transcriptionInitialized) {
+                android.util.Log.w("EnhancedVoiceDetectionManager", "❌ ONNX failed, falling back to whisper.cpp...")
+                transcriptionInitialized = transcriptionManager.initialize()
+                if (transcriptionInitialized) {
+                    android.util.Log.i("EnhancedVoiceDetectionManager", "✅ Whisper.cpp fallback initialized")
+                }
+            } else {
+                android.util.Log.i("EnhancedVoiceDetectionManager", "✅ ONNX transcription initialized successfully")
+            }
+            
             isTranscriptionInitialized = transcriptionInitialized
         }
         
@@ -113,9 +142,15 @@ class EnhancedVoiceDetectionManager(
     
     fun isModelInitialized(): Boolean = vadProcessor.isInitialized()
     
-    fun isTranscriptionReady(): Boolean = transcriptionManager.isReady()
+    fun isTranscriptionReady(): Boolean = onnxTranscriptionManager.isReady() || transcriptionManager.isReady()
     
-    fun isTranscriptionRunning(): Boolean = transcriptionManager.isRunning()
+    fun isTranscriptionRunning(): Boolean {
+        return if (onnxTranscriptionManager.isReady()) {
+            false // ONNX processes on-demand
+        } else {
+            transcriptionManager.isRunning()
+        }
+    }
     
     private fun processAudioData(audioData: FloatArray, samplesRead: Int) {
         // Buffer speech audio for transcription when speech is detected
@@ -230,8 +265,17 @@ class EnhancedVoiceDetectionManager(
                 android.util.Log.d("EnhancedVoiceDetectionManager", 
                     "Starting transcription of ${speechData.size} samples (${speechData.size / 16000.0f} seconds)")
                 
-                val segments = transcriptionManager.transcribeSpeechSegment(speechData)
-                val fullText = segments.joinToString(" ") { it.text.trim() }
+                // Try ONNX first, fallback to whisper.cpp
+                val fullText = if (onnxTranscriptionManager.isReady()) {
+                    android.util.Log.d("EnhancedVoiceDetectionManager", "🎯 Using ONNX transcription")
+                    onnxTranscriptionManager.transcribeSpeechSegment(speechData)
+                } else {
+                    android.util.Log.d("EnhancedVoiceDetectionManager", "🔄 Using whisper.cpp fallback")
+                    val segments = transcriptionManager.transcribeSpeechSegment(speechData)
+                    segments.joinToString(" ") { it.text.trim() }
+                }
+                
+                val segments = emptyList<WhisperSegment>() // ONNX returns string directly
                 
                 if (fullText.isNotBlank()) {
                     android.util.Log.i("EnhancedVoiceDetectionManager", "Speech transcribed: '$fullText'")
@@ -275,6 +319,7 @@ class EnhancedVoiceDetectionManager(
         audioManager.release()
         vadProcessor.release()
         transcriptionManager.release()
+        onnxTranscriptionManager.release()
     }
     
     companion object {
