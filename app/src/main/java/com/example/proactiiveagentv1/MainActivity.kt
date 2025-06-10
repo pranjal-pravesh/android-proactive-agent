@@ -9,7 +9,8 @@ import androidx.lifecycle.lifecycleScope
 import com.example.proactiiveagentv1.detection.EnhancedVoiceDetectionManager
 import com.example.proactiiveagentv1.permissions.PermissionManager
 import com.example.proactiiveagentv1.ui.EnhancedVoiceDetectionScreen
-import com.example.proactiiveagentv1.whisper.WhisperSegment
+import com.example.proactiiveagentv1.ui.SettingsScreen
+import com.example.proactiiveagentv1.settings.VadSettings
 import kotlinx.coroutines.launch
 import com.example.proactiiveagentv1.ui.theme.ProactiiveAgentV1Theme
 
@@ -22,12 +23,8 @@ class MainActivity : ComponentActivity() {
     private var isSpeaking = mutableStateOf(false)
     private var vadConfidence = mutableFloatStateOf(0f)
     private var isModelLoaded = mutableStateOf(false)
-    private var isTranscriptionReady = mutableStateOf(false)
-    private var transcriptionText = mutableStateOf("")
-    private var transcriptionSegments = mutableStateOf<List<WhisperSegment>>(emptyList())
-    
-    // Detection parameters
-    private val vadThreshold = 0.5f
+    private var showSettings = mutableStateOf(false)
+    private var currentVadSettings = mutableStateOf(VadSettings())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,18 +34,27 @@ class MainActivity : ComponentActivity() {
         
         setContent {
             ProactiiveAgentV1Theme {
-                EnhancedVoiceDetectionScreen(
-                    isListening = isListening.value,
-                    isSpeaking = isSpeaking.value,
-                    vadConfidence = vadConfidence.floatValue,
-                    isModelLoaded = isModelLoaded.value,
-                    isTranscriptionReady = isTranscriptionReady.value,
-                    transcriptionText = transcriptionText.value,
-                    transcriptionSegments = transcriptionSegments.value,
-                    vadThreshold = vadThreshold,
-                    onStartDetection = { startVoiceDetection() },
-                    onStopDetection = { stopVoiceDetection() }
-                )
+                if (showSettings.value) {
+                    SettingsScreen(
+                        currentSettings = currentVadSettings.value,
+                        onSettingsChanged = { newSettings ->
+                            currentVadSettings.value = newSettings
+                            voiceDetectionManager.updateVadSettings(newSettings)
+                        },
+                        onBackPressed = { showSettings.value = false }
+                    )
+                } else {
+                    EnhancedVoiceDetectionScreen(
+                        isListening = isListening.value,
+                        isSpeaking = isSpeaking.value,
+                        vadConfidence = vadConfidence.floatValue,
+                        isModelLoaded = isModelLoaded.value,
+                        vadThreshold = currentVadSettings.value.vadThreshold,
+                        onStartDetection = { startVoiceDetection() },
+                        onStopDetection = { stopVoiceDetection() },
+                        onOpenSettings = { showSettings.value = true }
+                    )
+                }
             }
         }
         
@@ -77,14 +83,6 @@ class MainActivity : ComponentActivity() {
             },
             onSpeechEnded = {
                 onSpeechEnded()
-            },
-            onTranscriptionResult = { text, segments ->
-                transcriptionText.value = text
-                transcriptionSegments.value = segments
-            },
-            onTranscriptionError = { error ->
-                // Handle transcription errors
-                transcriptionText.value = "Error: $error"
             }
         )
     }
@@ -95,9 +93,13 @@ class MainActivity : ComponentActivity() {
     
     private fun setupVoiceDetection() {
         lifecycleScope.launch {
-            val initialized = voiceDetectionManager.initialize(enableTranscription = true)
+            val initialized = voiceDetectionManager.initialize()
             isModelLoaded.value = initialized && voiceDetectionManager.isModelInitialized()
-            isTranscriptionReady.value = initialized && voiceDetectionManager.isTranscriptionReady()
+            
+            // Load current VAD settings
+            if (initialized) {
+                currentVadSettings.value = voiceDetectionManager.getVadSettings()
+            }
         }
     }
     
@@ -107,13 +109,11 @@ class MainActivity : ComponentActivity() {
             return
         }
         
-        val started = voiceDetectionManager.startDetection(enableTranscription = true)
+        val started = voiceDetectionManager.startDetection()
         if (started) {
             isListening.value = true
             isSpeaking.value = false
             vadConfidence.floatValue = 0f
-            transcriptionText.value = ""
-            transcriptionSegments.value = emptyList()
         }
     }
     
