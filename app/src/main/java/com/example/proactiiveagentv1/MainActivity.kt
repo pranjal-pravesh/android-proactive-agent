@@ -23,6 +23,8 @@ class MainActivity : ComponentActivity() {
     private var isSpeaking = mutableStateOf(false)
     private var vadConfidence = mutableFloatStateOf(0f)
     private var isModelLoaded = mutableStateOf(false)
+    private var isTranscriptionReady = mutableStateOf(false)
+    private var transcriptionText = mutableStateOf("")
     private var showSettings = mutableStateOf(false)
     private var currentVadSettings = mutableStateOf(VadSettings())
 
@@ -49,6 +51,8 @@ class MainActivity : ComponentActivity() {
                         isSpeaking = isSpeaking.value,
                         vadConfidence = vadConfidence.floatValue,
                         isModelLoaded = isModelLoaded.value,
+                        isTranscriptionReady = isTranscriptionReady.value,
+                        transcriptionText = transcriptionText.value,
                         vadThreshold = currentVadSettings.value.vadThreshold,
                         onStartDetection = { startVoiceDetection() },
                         onStopDetection = { stopVoiceDetection() },
@@ -83,6 +87,12 @@ class MainActivity : ComponentActivity() {
             },
             onSpeechEnded = {
                 onSpeechEnded()
+            },
+            onTranscriptionResult = { text ->
+                transcriptionText.value = text
+            },
+            onTranscriptionError = { error ->
+                transcriptionText.value = "Error: $error"
             }
         )
     }
@@ -93,8 +103,9 @@ class MainActivity : ComponentActivity() {
     
     private fun setupVoiceDetection() {
         lifecycleScope.launch {
-            val initialized = voiceDetectionManager.initialize()
+            val initialized = voiceDetectionManager.initialize(enableTranscription = true)
             isModelLoaded.value = initialized && voiceDetectionManager.isModelInitialized()
+            isTranscriptionReady.value = initialized && voiceDetectionManager.isTranscriptionReady()
             
             // Load current VAD settings
             if (initialized) {
@@ -109,11 +120,12 @@ class MainActivity : ComponentActivity() {
             return
         }
         
-        val started = voiceDetectionManager.startDetection()
+        val started = voiceDetectionManager.startDetection(enableTranscription = true)
         if (started) {
             isListening.value = true
             isSpeaking.value = false
             vadConfidence.floatValue = 0f
+            transcriptionText.value = ""
         }
     }
     

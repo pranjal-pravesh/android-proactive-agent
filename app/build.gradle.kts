@@ -49,6 +49,10 @@ dependencies {
     // ONNX Runtime for Silero VAD
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.17.1")
     
+    // TensorFlow Lite for Whisper transcription
+    implementation("org.tensorflow:tensorflow-lite:2.14.0")
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
+    
     implementation(libs.dafruits.webrtc)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

@@ -20,6 +20,8 @@ fun EnhancedVoiceDetectionScreen(
     isSpeaking: Boolean,
     vadConfidence: Float,
     isModelLoaded: Boolean,
+    isTranscriptionReady: Boolean,
+    transcriptionText: String,
     vadThreshold: Float,
     onStartDetection: () -> Unit,
     onStopDetection: () -> Unit,
@@ -55,6 +57,14 @@ fun EnhancedVoiceDetectionScreen(
                     status = if (isModelLoaded) "Loaded" else "Loading",
                     confidence = 1f,
                     color = if (isModelLoaded) Color.Green else Color.Gray,
+                    modifier = Modifier.weight(1f)
+                )
+                
+                StatusCard(
+                    title = "Transcription",
+                    status = if (isTranscriptionReady) "Ready" else "Loading",
+                    confidence = 1f,
+                    color = if (isTranscriptionReady) Color.Green else Color.Cyan,
                     modifier = Modifier.weight(1f)
                 )
                 
@@ -101,7 +111,7 @@ fun EnhancedVoiceDetectionScreen(
             ) {
                 Button(
                     onClick = onStartDetection,
-                    enabled = !isListening && isModelLoaded,
+                    enabled = !isListening && isModelLoaded && isTranscriptionReady,
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Start Detection")
@@ -117,32 +127,58 @@ fun EnhancedVoiceDetectionScreen(
                 }
             }
             
-            // VAD Information
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Voice Activity Detection",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(bottom = 12.dp)
+            // Transcription results
+            if (isTranscriptionReady) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
                     )
-                    
-                    Text(
-                        text = "Using Silero VAD model for real-time voice activity detection.",
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        modifier = Modifier.padding(bottom = 8.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "Live Transcription",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        )
+                        
+                        if (transcriptionText.isNotEmpty()) {
+                            Text(
+                                text = transcriptionText,
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        } else {
+                            Text(
+                                text = "Waiting for speech...",
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
+                        
+                        Text(
+                            text = "VAD Threshold: ${(vadThreshold * 100).toInt()}%",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        )
+                    }
+                }
+            } else {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color.Cyan.copy(alpha = 0.1f)
                     )
-                    
+                ) {
                     Text(
-                        text = "Threshold: ${(vadThreshold * 100).toInt()}%",
+                        text = "⚠️ Loading Whisper TFLite model...\n\nEnsure whisper-tiny.en.tflite and filters_vocab_en.bin are in assets/ folder",
                         fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        color = Color.Cyan,
+                        modifier = Modifier.padding(16.dp)
                     )
                 }
             }
