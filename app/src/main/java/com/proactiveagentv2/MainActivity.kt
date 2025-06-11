@@ -26,6 +26,7 @@ import com.proactiveagentv2.asr.Recorder.RecorderListener
 import com.proactiveagentv2.asr.Whisper
 import com.proactiveagentv2.asr.Whisper.WhisperListener
 import com.proactiveagentv2.utils.WaveUtil
+import com.proactiveagentv2.vad.VADManager
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -41,6 +42,7 @@ class MainActivity : AppCompatActivity() {
     private var mPlayer: Player? = null
     private var mRecorder: Recorder? = null
     private var mWhisper: Whisper? = null
+    private var mVADManager: VADManager? = null
 
     private var sdcardDataFolder: File? = null
     private var selectedWaveFile: File? = null
@@ -200,9 +202,53 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onDataReceived(samples: FloatArray?) {
-//                mWhisper.writeBuffer(samples);
+                // Forward audio data to VAD for processing
+                samples?.let { mVADManager?.processAudioChunk(it) }
             }
         })
+
+        // Initialize VAD Manager
+        mVADManager = VADManager(this)
+        mVADManager?.initialize()
+        
+        // Set up VAD callbacks
+        mVADManager?.setOnSpeechStartListener {
+            handler.post { 
+                tvStatus?.text = "Speech detected..."
+                Log.d(TAG, "Speech started detected by VAD")
+            }
+        }
+        
+        mVADManager?.setOnSpeechEndListener {
+            handler.post {
+                tvStatus?.text = "Speech ended, auto-transcribing..."
+                Log.d(TAG, "Speech ended detected by VAD, starting automatic transcription")
+            }
+            
+            // Auto-stop recording and start transcription
+            if (mRecorder?.isInProgress == true) {
+                stopRecording()
+                
+                // Wait a moment for recording to finish, then start transcription
+                handler.postDelayed({
+                    if (mWhisper == null) initModel(selectedTfliteFile!!)
+                    if (mWhisper?.isInProgress == false) {
+                        Log.d(TAG, "Auto-starting transcription after speech end...")
+                        startTranscription(selectedWaveFile!!.absolutePath)
+                    }
+                }, 500) // Wait 500ms for recording to complete
+            }
+        }
+        
+        mVADManager?.setOnVADStatusListener { isSpeech, probability ->
+            // Update UI with VAD status (optional)
+            handler.post { 
+                val status = if (isSpeech) "🎤 Speaking (${String.format("%.2f", probability)})" 
+                            else "🔇 Silence (${String.format("%.2f", probability)})"
+                // You can display this in a separate TextView if you want
+                // tvVADStatus?.text = status
+            }
+        }
 
         // Audio playback functionality
         mPlayer = Player(this)
@@ -221,6 +267,21 @@ class MainActivity : AppCompatActivity() {
 
         // for debugging
 //        testParallelProcessing();
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        
+        // Release VAD resources
+        mVADManager?.release()
+        mVADManager = null
+        
+        // Clean up other resources
+        mPlayer = null
+        mRecorder = null
+        deinitModel()
+        
+        Log.d(TAG, "MainActivity destroyed, resources released")
     }
 
     // Model initialization
@@ -328,11 +389,22 @@ class MainActivity : AppCompatActivity() {
 
         val waveFile = File(sdcardDataFolder, WaveUtil.RECORDING_FILE)
         mRecorder!!.setFilePath(waveFile.absolutePath)
+        
+        // Start VAD processing
+        mVADManager?.startVAD()
+        
         mRecorder!!.start()
+        
+        Log.d(TAG, "Recording started with VAD processing")
     }
 
     private fun stopRecording() {
+        // Stop VAD processing
+        mVADManager?.stopVAD()
+        
         mRecorder!!.stop()
+        
+        Log.d(TAG, "Recording stopped, VAD processing ended")
     }
 
     // Transcription calls
