@@ -6,16 +6,16 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import android.widget.SeekBar
-import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
-import androidx.appcompat.app.AlertDialog
+
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import com.proactiveagentv2.asr.Player
@@ -26,6 +26,8 @@ import com.proactiveagentv2.asr.Whisper
 import com.proactiveagentv2.asr.Whisper.WhisperListener
 import com.proactiveagentv2.ui.MainScreen
 import com.proactiveagentv2.ui.MainViewModel
+import com.proactiveagentv2.ui.SettingsDialog
+import com.proactiveagentv2.ui.SettingsState
 import com.proactiveagentv2.ui.theme.WhisperNativeTheme
 import com.proactiveagentv2.utils.WaveUtil
 import com.proactiveagentv2.vad.VADManager
@@ -55,6 +57,8 @@ class MainActivity : ComponentActivity(), RecorderListener {
     
     // For debugging and playback of last transcribed segment
     private var lastTranscribedSegmentFile: File? = null
+    
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,6 +67,8 @@ class MainActivity : ComponentActivity(), RecorderListener {
     
     private fun initializeComposeUI() {
         setContent {
+            val isSettingsDialogVisible = remember { mutableStateOf(false) }
+            
             WhisperNativeTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -84,8 +90,31 @@ class MainActivity : ComponentActivity(), RecorderListener {
                             composeViewModel.clearTranscription()
                             Toast.makeText(this@MainActivity, "Transcription cleared", Toast.LENGTH_SHORT).show()
                         },
-                        onSettingsClick = { showSettingsDialog() }
+                        onSettingsClick = { isSettingsDialogVisible.value = true }
                     )
+                    
+                    // Settings Dialog
+                    val vadMgr = mVADManager
+                    if (vadMgr != null) {
+                        SettingsDialog(
+                            isVisible = isSettingsDialogVisible.value,
+                            currentSettings = SettingsState(
+                                speechThreshold = vadMgr.speechThreshold,
+                                silenceThreshold = vadMgr.silenceThreshold,
+                                minSpeechDurationMs = vadMgr.minSpeechDurationMs,
+                                maxSilenceDurationMs = vadMgr.maxSilenceDurationMs
+                            ),
+                            onDismiss = { isSettingsDialogVisible.value = false },
+                            onSaveSettings = { newSettings ->
+                                vadMgr.speechThreshold = newSettings.speechThreshold
+                                vadMgr.silenceThreshold = newSettings.silenceThreshold
+                                vadMgr.minSpeechDurationMs = newSettings.minSpeechDurationMs
+                                vadMgr.maxSilenceDurationMs = newSettings.maxSilenceDurationMs
+                                Toast.makeText(this@MainActivity, "Settings saved", Toast.LENGTH_SHORT).show()
+                                Log.d(TAG, "Settings updated: $newSettings")
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -597,123 +626,9 @@ class MainActivity : ComponentActivity(), RecorderListener {
         return filteredFiles
     }
 
-    private fun showSettingsDialog() {
-        val vadMgr = mVADManager ?: return
-        
-        val dialogView = layoutInflater.inflate(R.layout.dialog_vad_settings, null)
-        val speechThresholdSlider = dialogView.findViewById<SeekBar>(R.id.speechThresholdSlider)
-        val silenceThresholdSlider = dialogView.findViewById<SeekBar>(R.id.silenceThresholdSlider)
-        val minSpeechDurationSlider = dialogView.findViewById<SeekBar>(R.id.minSpeechDurationSlider)
-        val maxSilenceDurationSlider = dialogView.findViewById<SeekBar>(R.id.maxSilenceDurationSlider)
-        
-        val speechThresholdLabel = dialogView.findViewById<TextView>(R.id.speechThresholdLabel)
-        val silenceThresholdLabel = dialogView.findViewById<TextView>(R.id.silenceThresholdLabel)
-        val minSpeechDurationLabel = dialogView.findViewById<TextView>(R.id.minSpeechDurationLabel)
-        val maxSilenceDurationLabel = dialogView.findViewById<TextView>(R.id.maxSilenceDurationLabel)
-        
-        // Set current values
-        speechThresholdSlider.progress = (vadMgr.speechThreshold * 100).toInt()
-        silenceThresholdSlider.progress = (vadMgr.silenceThreshold * 100).toInt()
-        minSpeechDurationSlider.progress = (vadMgr.minSpeechDurationMs / 100).toInt()
-        maxSilenceDurationSlider.progress = (vadMgr.maxSilenceDurationMs / 100).toInt()
-        
-        fun updateLabels() {
-            speechThresholdLabel.text = "Speech Threshold: ${speechThresholdSlider.progress / 100f}"
-            silenceThresholdLabel.text = "Silence Threshold: ${silenceThresholdSlider.progress / 100f}"
-            minSpeechDurationLabel.text = "Min Speech Duration: ${minSpeechDurationSlider.progress * 100}ms"
-            maxSilenceDurationLabel.text = "Max Silence Duration: ${maxSilenceDurationSlider.progress * 100}ms"
-        }
-        
-        updateLabels()
-        
-        speechThresholdSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                updateLabels()
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
-        
-        silenceThresholdSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                updateLabels()
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
-        
-        minSpeechDurationSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                updateLabels()
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
-        
-        maxSilenceDurationSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                updateLabels()
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
-        
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("VAD Settings & Debug")
-            .setView(dialogView)
-            .setPositiveButton("Apply") { _, _ ->
-                vadMgr.speechThreshold = speechThresholdSlider.progress / 100f
-                vadMgr.silenceThreshold = silenceThresholdSlider.progress / 100f
-                vadMgr.minSpeechDurationMs = minSpeechDurationSlider.progress * 100L
-                vadMgr.maxSilenceDurationMs = maxSilenceDurationSlider.progress * 100L
-                Toast.makeText(this, "VAD settings updated", Toast.LENGTH_SHORT).show()
-            }
-            .setNegativeButton("Cancel", null)
-            .setNeutralButton("Debug") { _, _ ->
-                showDebugDialog()
-            }
-            .show()
-    }
+
     
-    private fun showDebugDialog() {
-        val options = arrayOf(
-            "Show Last Segment Info",
-            "Test Transcription Engine",
-            "Clear All Segments"
-        )
-        
-        AlertDialog.Builder(this)
-            .setTitle("Debug Options")
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> {
-                        // Show last segment info
-                        lastTranscribedSegmentFile?.let { file ->
-                            if (file.exists()) {
-                                val info = """
-                                    File: ${file.name}
-                                    Size: ${file.length()} bytes
-                                    Path: ${file.absolutePath}
-                                    Last Modified: ${java.util.Date(file.lastModified())}
-                                """.trimIndent()
-                                
-                                AlertDialog.Builder(this)
-                                    .setTitle("Last Segment Info")
-                                    .setMessage(info)
-                                    .setPositiveButton("OK", null)
-                                    .show()
-                                    
-                                Log.d(TAG, "Last segment info:\n$info")
-                            } else {
-                                Toast.makeText(this, "No segment file found", Toast.LENGTH_SHORT).show()
-                            }
-                        } ?: Toast.makeText(this, "No segment available", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
+
 
     override fun onDataReceived(data: FloatArray?) {
         data?.let { mVADManager?.processAudioChunk(it) }
