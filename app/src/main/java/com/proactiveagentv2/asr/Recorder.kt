@@ -146,44 +146,61 @@ class Recorder(private val mContext: Context) {
             AudioRecord(audioSource, sampleRateInHz, channelConfig, audioFormat, bufferSize)
         audioRecord.startRecording()
 
-        // Calculate maximum byte counts for 30 seconds (for saving)
+        // Calculate byte counts for different durations
         val bytesForOneSecond = sampleRateInHz * bytesPerSample * channels
-        val bytesForThreeSeconds = bytesForOneSecond * 3
-        val bytesForThirtySeconds = bytesForOneSecond * 30
         val bytesForSixtySeconds = bytesForOneSecond * RECORDING_DURATION
+        
+        // PYTHON-LIKE STREAMING: Send smaller chunks more frequently for real-time VAD processing
+        // Instead of waiting for 3 seconds, send 0.5 second chunks (like Python's callback approach)
+        val streamingChunkSizeMs = 500 // 500ms chunks for real-time processing
+        val bytesForStreamingChunk = (bytesForOneSecond * streamingChunkSizeMs) / 1000
 
-        val outputBuffer = ByteArrayOutputStream() // Buffer for saving data in wave file
-        val realtimeBuffer = ByteArrayOutputStream() // Buffer for real-time processing
+        val outputBuffer = ByteArrayOutputStream() // Buffer for saving complete recording
+        val streamingBuffer = ByteArrayOutputStream() // Buffer for real-time streaming to VAD
 
         val audioData = ByteArray(bufferSize)
         var totalBytesRead = 0
+        
+        Log.d(TAG, "Starting real-time audio streaming with ${streamingChunkSizeMs}ms chunks")
 
         while (mInProgress.get() && totalBytesRead < bytesForSixtySeconds) {
             val bytesRead = audioRecord.read(audioData, 0, bufferSize)
             if (bytesRead > 0) {
-                outputBuffer.write(audioData, 0, bytesRead) // Save all bytes read up to 30 seconds
-                realtimeBuffer.write(audioData, 0, bytesRead) // Accumulate real-time audio data
+                // Save to complete recording buffer
+                outputBuffer.write(audioData, 0, bytesRead)
+                // Add to streaming buffer for real-time processing
+                streamingBuffer.write(audioData, 0, bytesRead)
                 totalBytesRead += bytesRead
 
-                // Check if realtimeBuffer has more than 3 seconds of data
-                if (realtimeBuffer.size() >= bytesForThreeSeconds) {
-                    val samples = convertToFloatArray(ByteBuffer.wrap(realtimeBuffer.toByteArray()))
-                    realtimeBuffer.reset() // Clear the buffer for the next accumulation
-                    sendData(samples) // Send real-time data for processing
+                // PYTHON-LIKE BEHAVIOR: Send audio chunks frequently for real-time VAD processing
+                // This mimics Python's continuous callback approach
+                if (streamingBuffer.size() >= bytesForStreamingChunk) {
+                    val samples = convertToFloatArray(ByteBuffer.wrap(streamingBuffer.toByteArray()))
+                    streamingBuffer.reset() // Clear the streaming buffer
+                    sendData(samples) // Send for real-time VAD processing
+                    
+                    // Log streaming info (can be removed in production)
+                    if (totalBytesRead % bytesForOneSecond < bufferSize) {
+                        Log.v(TAG, "Streaming: sent ${samples.size} samples (${samples.size / sampleRateInHz.toFloat()}s)")
+                    }
                 }
             } else {
-                Log.d(
-                    TAG,
-                    "AudioRecord error, bytes read: $bytesRead"
-                )
+                Log.d(TAG, "AudioRecord error, bytes read: $bytesRead")
                 break
             }
+        }
+
+        // Send any remaining audio data in the streaming buffer
+        if (streamingBuffer.size() > 0) {
+            val remainingSamples = convertToFloatArray(ByteBuffer.wrap(streamingBuffer.toByteArray()))
+            sendData(remainingSamples)
+            Log.d(TAG, "Sent final chunk: ${remainingSamples.size} samples")
         }
 
         audioRecord.stop()
         audioRecord.release()
 
-        // Save recorded audio data to file (up to 30 seconds)
+        // Save the complete recording to file
         createWaveFile(
             mWavFilePath,
             outputBuffer.toByteArray(),
@@ -195,10 +212,10 @@ class Recorder(private val mContext: Context) {
 
         // Notify the waiting thread that recording is complete
         synchronized(fileSavedLock) {
-            (fileSavedLock as java.lang.Object).notify() // Notify that recording is finished
+            (fileSavedLock as java.lang.Object).notify()
         }
-
-        //        moveFileToSdcard(mWavFilePath);
+        
+        Log.d(TAG, "Recording completed. Total samples: ${totalBytesRead / bytesPerSample}")
     }
 
     private fun convertToFloatArray(buffer: ByteBuffer): FloatArray {

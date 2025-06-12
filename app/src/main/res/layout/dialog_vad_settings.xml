@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Adjust Voice Activity Detection Settings"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:layout_marginBottom="20dp" />
+
+    <!-- Speech Threshold -->
+    <TextView
+        android:id="@+id/speechThresholdLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Speech Threshold: 0.50"
+        android:textSize="14sp"
+        android:layout_marginBottom="8dp" />
+
+    <SeekBar
+        android:id="@+id/speechThresholdSlider"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:max="100"
+        android:progress="50"
+        android:layout_marginBottom="16dp" />
+
+    <!-- Silence Threshold -->
+    <TextView
+        android:id="@+id/silenceThresholdLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Silence Threshold: 0.30"
+        android:textSize="14sp"
+        android:layout_marginBottom="8dp" />
+
+    <SeekBar
+        android:id="@+id/silenceThresholdSlider"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:max="100"
+        android:progress="30"
+        android:layout_marginBottom="16dp" />
+
+    <!-- Min Speech Duration -->
+    <TextView
+        android:id="@+id/minSpeechDurationLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Min Speech Duration: 300ms"
+        android:textSize="14sp"
+        android:layout_marginBottom="8dp" />
+
+    <SeekBar
+        android:id="@+id/minSpeechDurationSlider"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:max="50"
+        android:progress="3"
+        android:layout_marginBottom="16dp" />
+
+    <!-- Max Silence Duration -->
+    <TextView
+        android:id="@+id/maxSilenceDurationLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Max Silence Duration: 800ms"
+        android:textSize="14sp"
+        android:layout_marginBottom="8dp" />
+
+    <SeekBar
+        android:id="@+id/maxSilenceDurationSlider"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:max="50"
+        android:progress="8"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="• Speech/Silence thresholds range from 0.0 to 1.0\n• Min speech duration: 100ms to 5000ms\n• Max silence duration: 100ms to 5000ms\n• Lower values = more responsive detection"
+        android:textSize="12sp"
+        android:textColor="@android:color/darker_gray"
+        android:layout_marginTop="8dp" />
+
+</LinearLayout> 

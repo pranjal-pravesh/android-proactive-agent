@@ -204,6 +204,60 @@ class Whisper(context: Context) {
         }
     }
 
+    fun transcribeFromArray(audioSamples: FloatArray, language: String): String {
+        if (!mWhisperEngine.isInitialized) {
+            Log.w(TAG, "Whisper engine not initialized")
+            return "Error: Whisper engine not initialized"
+        }
+        
+        if (audioSamples.isEmpty()) {
+            Log.w(TAG, "Empty audio samples provided")
+            return "Error: Empty audio samples"
+        }
+        
+        Log.d(TAG, "Transcribing audio segment with ${audioSamples.size} samples (${audioSamples.size / 16000.0f} seconds)")
+        
+        // Log some sample values for debugging
+        val samplePreview = audioSamples.take(10).joinToString(", ") { "%.3f".format(it) }
+        Log.d(TAG, "First 10 samples: [$samplePreview]")
+        
+        // Check if audio has any significant values
+        val maxValue = audioSamples.maxOrNull() ?: 0f
+        val minValue = audioSamples.minOrNull() ?: 0f
+        val rms = kotlin.math.sqrt(audioSamples.map { it * it }.average()).toFloat()
+        Log.d(TAG, "Audio stats - Min: %.4f, Max: %.4f, RMS: %.4f".format(minValue, maxValue, rms))
+        
+        if (maxValue < 0.001f && minValue > -0.001f) {
+            Log.w(TAG, "Audio samples appear to be silent (very low amplitude)")
+        }
+        
+        try {
+            val startTime = System.currentTimeMillis()
+            val result = mWhisperEngine.transcribeBuffer(audioSamples)
+            val endTime = System.currentTimeMillis()
+            
+            Log.d(TAG, "Transcription completed in ${endTime - startTime}ms")
+            Log.d(TAG, "Raw transcription result: '$result'")
+            
+            if (result.isNullOrBlank()) {
+                Log.w(TAG, "Transcription returned empty/null result")
+                return "Error: Empty transcription result"
+            }
+            
+            val trimmedResult = result.trim()
+            if (trimmedResult.isEmpty()) {
+                Log.w(TAG, "Transcription returned only whitespace")
+                return "Error: Transcription returned only whitespace"
+            }
+            
+            Log.d(TAG, "Final transcription result: '$trimmedResult'")
+            return trimmedResult
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during transcription from array", e)
+            return "Error: ${e.message}"
+        }
+    }
+
     companion object {
         private const val TAG = "Whisper"
         const val MSG_PROCESSING: String = "Processing..."

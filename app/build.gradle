@@ -13,7 +13,7 @@ android {
 
     defaultConfig {
         applicationId "com.proactiveagentv2"
-        minSdk 26
+        minSdk 28
         targetSdk 34
         versionCode 1
         versionName "1.0"
@@ -22,7 +22,7 @@ android {
 
         // Specify the ABIs to exclude
         ndk {
-            abiFilters 'armeabi-v7a', 'arm64-v8a'
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
         }
     }
 
@@ -35,18 +35,32 @@ android {
     }
     externalNativeBuild {
         cmake {
-            path "src/main/cpp/CMakeLists.txt"
-            version "3.22.1"
+            path file('src/main/cpp/CMakeLists.txt')
+            version '3.22.1'
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
     kotlinOptions {
-        jvmTarget = '11'
+        jvmTarget = '1.8'
     }
     ndkVersion "25.1.8937393"
+
+    // Fix for native library packaging (corrected syntax)
+    packagingOptions {
+        pickFirst '**/libtensorflowlite.so'
+        pickFirst '**/libc++_shared.so'
+        pickFirst '**/libaudioEngine.so'
+    }
+    
+    // Ensure native libraries are properly included
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ['src/main/jniLibs', 'tf-lite-api/generated-libs']
+        }
+    }
 }
 
 dependencies {
