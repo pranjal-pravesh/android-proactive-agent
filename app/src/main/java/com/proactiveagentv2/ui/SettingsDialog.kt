@@ -14,6 +14,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.activity.compose.rememberLauncherForActivityResult
+import android.net.Uri
+import androidx.activity.result.contract.ActivityResultContracts
 import com.proactiveagentv2.llm.LLMManager
 import com.proactiveagentv2.llm.LLMModelInfo
 import com.proactiveagentv2.llm.ModelDownloadStatus
@@ -347,6 +350,18 @@ private fun LLMModelSection(llmManager: LLMManager) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                val importLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.GetContent()
+                ) { uri: Uri? ->
+                    uri?.let {
+                        scope.launch {
+                            isProcessing = true
+                            val ok = llmManager.importModelFromUri(it, modelInfo)
+                            modelStatus = if (ok) ModelDownloadStatus.DOWNLOADED else ModelDownloadStatus.ERROR
+                            isProcessing = false
+                        }
+                    }
+                }
                 when (modelStatus) {
                     ModelDownloadStatus.NOT_DOWNLOADED, ModelDownloadStatus.ERROR -> {
                         Button(
@@ -358,15 +373,7 @@ private fun LLMModelSection(llmManager: LLMManager) {
                                         val success = llmManager.downloadModel(modelInfo) { progress ->
                                             downloadProgress = progress
                                         }
-                                        
-                                        if (success) {
-                                            modelStatus = ModelDownloadStatus.DOWNLOADED
-                                            // Initialize the model after download
-                                            llmManager.initializeModel(modelInfo)
-                                        } else {
-                                            modelStatus = ModelDownloadStatus.ERROR
-                                        }
-                                        
+                                        modelStatus = if (success) ModelDownloadStatus.DOWNLOADED else ModelDownloadStatus.ERROR
                                         downloadProgress = null
                                         isProcessing = false
                                     }
@@ -376,6 +383,13 @@ private fun LLMModelSection(llmManager: LLMManager) {
                             modifier = Modifier.weight(1f)
                         ) {
                             Text("Download Model")
+                        }
+                        OutlinedButton(
+                            onClick = { importLauncher.launch("*/*") },
+                            enabled = !isProcessing,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Import .task")
                         }
                     }
                     

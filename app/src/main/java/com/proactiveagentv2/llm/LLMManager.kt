@@ -73,7 +73,7 @@ class LLMManager(private val context: Context) {
         val modelFile = File(modelsDir, modelInfo.modelFile)
         return when {
             !modelFile.exists() -> ModelDownloadStatus.NOT_DOWNLOADED
-            modelFile.length() != modelInfo.sizeInBytes -> ModelDownloadStatus.ERROR
+            modelFile.length() == 0L -> ModelDownloadStatus.ERROR
             else -> ModelDownloadStatus.DOWNLOADED
         }
     }
@@ -88,7 +88,7 @@ class LLMManager(private val context: Context) {
             val modelFile = File(modelsDir, modelInfo.modelFile)
             val tempFile = File(modelsDir, "${modelInfo.modelFile}.tmp")
             
-            // Delete existing files
+            // Clean previous files
             if (modelFile.exists()) modelFile.delete()
             if (tempFile.exists()) tempFile.delete()
             
@@ -101,8 +101,8 @@ class LLMManager(private val context: Context) {
                 return@withContext false
             }
             
-            val fileLength = connection.contentLength.toLong()
-            Log.d(TAG, "Expected file size: $fileLength bytes")
+            val expectedBytes = connection.contentLengthLong // may be -1
+            Log.d(TAG, "Expected file size (reported): $expectedBytes")
             
             connection.inputStream.use { input ->
                 FileOutputStream(tempFile).use { output ->
@@ -115,28 +115,25 @@ class LLMManager(private val context: Context) {
                             Log.d(TAG, "Download cancelled")
                             return@withContext false
                         }
-                        
                         output.write(buffer, 0, bytesRead)
                         totalDownloaded += bytesRead
-                        
-                        val percentage = if (fileLength > 0) {
-                            (totalDownloaded * 100 / fileLength).toInt()
-                        } else 0
-                        
+                        val percent = if (expectedBytes > 0) ((totalDownloaded * 100) / expectedBytes).toInt() else 0
                         withContext(Dispatchers.Main) {
-                            onProgress(DownloadProgress(totalDownloaded, fileLength, percentage))
+                            onProgress(DownloadProgress(totalDownloaded, expectedBytes, percent))
                         }
                     }
                 }
             }
             
-            // Verify download
-            if (tempFile.length() == modelInfo.sizeInBytes) {
-                tempFile.renameTo(modelFile)
+            // Verify and move file
+            val valid = expectedBytes <= 0 || tempFile.length() == expectedBytes
+            if (valid) {
+                tempFile.copyTo(modelFile, overwrite = true)
+                tempFile.delete()
                 Log.d(TAG, "Model downloaded successfully: ${modelFile.absolutePath}")
                 true
             } else {
-                Log.e(TAG, "Download verification failed. Expected: ${modelInfo.sizeInBytes}, Got: ${tempFile.length()}")
+                Log.e(TAG, "Download size mismatch. Expected $expectedBytes bytes, got ${tempFile.length()} bytes")
                 tempFile.delete()
                 false
             }
@@ -251,6 +248,21 @@ class LLMManager(private val context: Context) {
             Log.d(TAG, "LLM resources released")
         } catch (e: Exception) {
             Log.e(TAG, "Error releasing LLM resources", e)
+        }
+    }
+    
+    fun importModelFromUri(uri: android.net.Uri, modelInfo: LLMModelInfo): Boolean {
+        return try {
+            val destFile = File(modelsDir, modelInfo.modelFile)
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(destFile).use { output ->
+                    input.copyTo(output)
+                }
+            } ?: return false
+            true
+        } catch (e: java.lang.Exception) {
+            Log.e(TAG, "Error importing model", e)
+            false
         }
     }
 } 
