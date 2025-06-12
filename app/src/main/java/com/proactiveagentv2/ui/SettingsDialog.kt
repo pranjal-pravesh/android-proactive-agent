@@ -4,15 +4,21 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.proactiveagentv2.llm.LLMManager
+import com.proactiveagentv2.llm.LLMModelInfo
+import com.proactiveagentv2.llm.ModelDownloadStatus
+import com.proactiveagentv2.llm.DownloadProgress
+import kotlinx.coroutines.launch
 import java.io.File
 
 data class SettingsState(
@@ -29,6 +35,7 @@ fun SettingsDialog(
     isVisible: Boolean,
     currentSettings: SettingsState,
     availableModels: List<File> = emptyList(),
+    llmManager: LLMManager? = null,
     onDismiss: () -> Unit,
     onSaveSettings: (SettingsState) -> Unit
 ) {
@@ -112,6 +119,12 @@ fun SettingsDialog(
                     }
 
                     Divider()
+
+                    // LLM Model Section
+                    if (llmManager != null) {
+                        LLMModelSection(llmManager = llmManager)
+                        Divider()
+                    }
 
                     // VAD Settings Section
                     Text(
@@ -231,4 +244,196 @@ private fun SettingsSlider(
             modifier = Modifier.fillMaxWidth()
         )
     }
-} 
+}
+
+@Composable
+private fun LLMModelSection(llmManager: LLMManager) {
+    val scope = rememberCoroutineScope()
+    val modelInfo = LLMManager.QWEN_MODEL
+    
+    var modelStatus by remember { mutableStateOf(llmManager.getModelStatus(modelInfo)) }
+    var downloadProgress by remember { mutableStateOf<DownloadProgress?>(null) }
+    var isProcessing by remember { mutableStateOf(false) }
+    
+    Text(
+        text = "AI Language Model",
+        fontSize = 16.sp,
+        fontWeight = FontWeight.Medium,
+        color = MaterialTheme.colorScheme.primary
+    )
+    
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Model Info
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = modelInfo.name,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "Size: ${llmManager.getModelSize(modelInfo)}",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                // Status indicator
+                when (modelStatus) {
+                    ModelDownloadStatus.DOWNLOADED -> {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Downloaded",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    ModelDownloadStatus.NOT_DOWNLOADED -> {
+                        Icon(
+                            imageVector = Icons.Default.CloudDownload,
+                            contentDescription = "Not downloaded",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    ModelDownloadStatus.DOWNLOADING -> {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp
+                        )
+                    }
+                    ModelDownloadStatus.ERROR -> {
+                        Icon(
+                            imageVector = Icons.Default.Error,
+                            contentDescription = "Error",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+            }
+            
+            // Download progress
+            downloadProgress?.let { progress ->
+                Column {
+                    LinearProgressIndicator(
+                        progress = { progress.percentage / 100f },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "${progress.percentage}% (${progress.downloadedBytes / (1024 * 1024)} MB / ${progress.totalBytes / (1024 * 1024)} MB)",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            
+            // Action buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                when (modelStatus) {
+                    ModelDownloadStatus.NOT_DOWNLOADED, ModelDownloadStatus.ERROR -> {
+                        Button(
+                            onClick = {
+                                if (!isProcessing) {
+                                    isProcessing = true
+                                    modelStatus = ModelDownloadStatus.DOWNLOADING
+                                    scope.launch {
+                                        val success = llmManager.downloadModel(modelInfo) { progress ->
+                                            downloadProgress = progress
+                                        }
+                                        
+                                        if (success) {
+                                            modelStatus = ModelDownloadStatus.DOWNLOADED
+                                            // Initialize the model after download
+                                            llmManager.initializeModel(modelInfo)
+                                        } else {
+                                            modelStatus = ModelDownloadStatus.ERROR
+                                        }
+                                        
+                                        downloadProgress = null
+                                        isProcessing = false
+                                    }
+                                }
+                            },
+                            enabled = !isProcessing,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Download Model")
+                        }
+                    }
+                    
+                    ModelDownloadStatus.DOWNLOADED -> {
+                        OutlinedButton(
+                            onClick = {
+                                if (!isProcessing) {
+                                    isProcessing = true
+                                    scope.launch {
+                                        if (llmManager.deleteModel(modelInfo)) {
+                                            modelStatus = ModelDownloadStatus.NOT_DOWNLOADED
+                                        }
+                                        isProcessing = false
+                                    }
+                                }
+                            },
+                            enabled = !isProcessing,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Delete Model")
+                        }
+                        
+                        Button(
+                            onClick = {
+                                if (!isProcessing) {
+                                    isProcessing = true
+                                    scope.launch {
+                                        llmManager.initializeModel(modelInfo)
+                                        isProcessing = false
+                                    }
+                                }
+                            },
+                            enabled = !isProcessing && !llmManager.isModelInitialized(),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(if (llmManager.isModelInitialized()) "Ready" else "Initialize")
+                        }
+                    }
+                    
+                    ModelDownloadStatus.DOWNLOADING -> {
+                        Button(
+                            onClick = { /* TODO: Cancel download */ },
+                            enabled = false,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Downloading...")
+                        }
+                    }
+                }
+            }
+            
+            // Model description
+            Text(
+                text = modelInfo.description,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 16.sp
+            )
+        }
+    }
+}

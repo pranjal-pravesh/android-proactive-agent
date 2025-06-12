@@ -105,6 +105,9 @@ dependencies {
 
     // ONNX Runtime for Silero VAD
     implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.18.0'
+    
+    // MediaPipe GenAI for LLM inference
+    implementation 'com.google.mediapipe:tasks-genai:0.10.24'
 
     // Debug tools for Compose
     debugImplementation 'androidx.compose.ui:ui-tooling'

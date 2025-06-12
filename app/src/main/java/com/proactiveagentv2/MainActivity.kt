@@ -31,6 +31,7 @@ import com.proactiveagentv2.ui.SettingsState
 import com.proactiveagentv2.ui.theme.WhisperNativeTheme
 import com.proactiveagentv2.utils.WaveUtil
 import com.proactiveagentv2.vad.VADManager
+import com.proactiveagentv2.llm.LLMManager
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -43,6 +44,7 @@ class MainActivity : ComponentActivity(), RecorderListener {
     private var mRecorder: Recorder? = null
     private var mWhisper: Whisper? = null
     private var mVADManager: VADManager? = null
+    private var mLLMManager: LLMManager? = null
 
     private var sdcardDataFolder: File? = null
     private var selectedTfliteFile: File? = null
@@ -98,6 +100,7 @@ class MainActivity : ComponentActivity(), RecorderListener {
                                 selectedModelFile = selectedTfliteFile
                             ),
                             availableModels = composeViewModel.appState.modelFiles,
+                            llmManager = mLLMManager,
                             onDismiss = { isSettingsDialogVisible.value = false },
                             onSaveSettings = { newSettings ->
                                 // Update VAD settings
@@ -184,10 +187,16 @@ class MainActivity : ComponentActivity(), RecorderListener {
         }
 
         setupVADCallbacks()
+        
+        // Initialize LLM Manager
+        mLLMManager = LLMManager(this)
+        Log.d(TAG, "LLM Manager initialized")
+        
         checkRecordPermission()
         
         Log.d(TAG, "=== Backend initialization completed ===")
         Log.d(TAG, "Whisper engine status: ${if (mWhisper != null) "✅ READY" else "❌ NOT INITIALIZED"}")
+        Log.d(TAG, "LLM Manager status: ${if (mLLMManager != null) "✅ READY" else "❌ NOT INITIALIZED"}")
     }
     
     private fun setupVADCallbacks() {
@@ -236,6 +245,10 @@ class MainActivity : ComponentActivity(), RecorderListener {
         // Release VAD resources
         mVADManager?.release()
         mVADManager = null
+        
+        // Release LLM resources
+        mLLMManager?.release()
+        mLLMManager = null
         
         // Clean up last transcribed segment file
         lastTranscribedSegmentFile?.let { file ->
