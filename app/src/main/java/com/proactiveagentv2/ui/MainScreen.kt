@@ -26,7 +26,6 @@ import java.io.File
 @Composable
 fun MainScreen(
     appState: AppState,
-    onModelSelected: (File) -> Unit,
     onRecordClick: () -> Unit,
     onPlayClick: () -> Unit,
     onClearClick: () -> Unit,
@@ -42,13 +41,6 @@ fun MainScreen(
     ) {
         // Header Section
         HeaderSection()
-        
-        // Model Selection Card
-        ModelSelectionCard(
-            modelFiles = appState.modelFiles,
-            selectedModel = appState.selectedModelFile,
-            onModelSelected = onModelSelected
-        )
         
         // Control Panel Card
         ControlPanelCard(
@@ -103,14 +95,14 @@ private fun HeaderSection() {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "Voice Transcription",
+                text = "Proactive Agent V2",
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Bold
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "AI-powered speech recognition",
+                text = "Fully proactive, voice-first AI assistant",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -118,93 +110,9 @@ private fun HeaderSection() {
     }
 }
 
-@Composable
-private fun ModelSelectionCard(
-    modelFiles: List<File>,
-    selectedModel: File?,
-    onModelSelected: (File) -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Text(
-                text = "Configuration",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.secondary,
-                fontWeight = FontWeight.SemiBold
-            )
-            
-            // Model Selection only
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "AI Model",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                FileDropdown(
-                    files = modelFiles,
-                    selectedFile = selectedModel,
-                    onFileSelected = onModelSelected,
-                    placeholder = "Select model..."
-                )
-            }
-        }
-    }
-}
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun FileDropdown(
-    files: List<File>,
-    selectedFile: File?,
-    onFileSelected: (File) -> Unit,
-    placeholder: String
-) {
-    var expanded by remember { mutableStateOf(false) }
-    
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded }
-    ) {
-        OutlinedTextField(
-            value = selectedFile?.name ?: "",
-            onValueChange = { },
-            readOnly = true,
-            placeholder = { Text(placeholder) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            colors = OutlinedTextFieldDefaults.colors(
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                focusedBorderColor = MaterialTheme.colorScheme.primary
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .menuAnchor()
-        )
-        
-        ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
-        ) {
-            files.forEach { file ->
-                DropdownMenuItem(
-                    text = { Text(file.name) },
-                    onClick = {
-                        onFileSelected(file)
-                        expanded = false
-                    }
-                )
-            }
-        }
-    }
-}
+
+
 
 @Composable
 private fun ControlPanelCard(

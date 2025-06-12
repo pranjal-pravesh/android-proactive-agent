@@ -76,14 +76,6 @@ class MainActivity : ComponentActivity(), RecorderListener {
                 ) {
                     MainScreen(
                         appState = composeViewModel.appState,
-                        onModelSelected = { file -> 
-                            Log.d(TAG, "Model selected: ${file.name}")
-                            deinitModel()
-                            selectedTfliteFile = file
-                            composeViewModel.selectModelFile(file)
-                            // Initialize the model immediately
-                            initModel(selectedTfliteFile!!)
-                        },
                         onRecordClick = { handleRecordClick() },
                         onPlayClick = { handlePlayClick() },
                         onClearClick = { 
@@ -102,14 +94,29 @@ class MainActivity : ComponentActivity(), RecorderListener {
                                 speechThreshold = vadMgr.speechThreshold,
                                 silenceThreshold = vadMgr.silenceThreshold,
                                 minSpeechDurationMs = vadMgr.minSpeechDurationMs,
-                                maxSilenceDurationMs = vadMgr.maxSilenceDurationMs
+                                maxSilenceDurationMs = vadMgr.maxSilenceDurationMs,
+                                selectedModelFile = selectedTfliteFile
                             ),
+                            availableModels = composeViewModel.appState.modelFiles,
                             onDismiss = { isSettingsDialogVisible.value = false },
                             onSaveSettings = { newSettings ->
+                                // Update VAD settings
                                 vadMgr.speechThreshold = newSettings.speechThreshold
                                 vadMgr.silenceThreshold = newSettings.silenceThreshold
                                 vadMgr.minSpeechDurationMs = newSettings.minSpeechDurationMs
                                 vadMgr.maxSilenceDurationMs = newSettings.maxSilenceDurationMs
+                                
+                                // Update model if changed
+                                if (newSettings.selectedModelFile != selectedTfliteFile) {
+                                    newSettings.selectedModelFile?.let { file ->
+                                        Log.d(TAG, "Model changed to: ${file.name}")
+                                        deinitModel()
+                                        selectedTfliteFile = file
+                                        composeViewModel.selectModelFile(file)
+                                        initModel(file)
+                                    }
+                                }
+                                
                                 Toast.makeText(this@MainActivity, "Settings saved", Toast.LENGTH_SHORT).show()
                                 Log.d(TAG, "Settings updated: $newSettings")
                             }
