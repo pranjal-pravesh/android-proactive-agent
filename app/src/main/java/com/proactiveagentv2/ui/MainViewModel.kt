@@ -70,4 +70,14 @@ class MainViewModel : ViewModel() {
         android.util.Log.d("MainViewModel", "Selecting model file: ${file.name}")
         appState = appState.copy(selectedModelFile = file)
     }
+
+    fun appendLLMResponse(response: String, durationMs: Long) {
+        val formatted = if (response.isNotBlank()) "LLM >> $response" else "LLM >> (no response)"
+        val newText = if (appState.transcriptionText.isEmpty()) {
+            formatted
+        } else {
+            "$formatted\n${appState.transcriptionText}"
+        }
+        appState = appState.copy(transcriptionText = newText, status = "LLM responded in ${durationMs}ms")
+    }
 } 

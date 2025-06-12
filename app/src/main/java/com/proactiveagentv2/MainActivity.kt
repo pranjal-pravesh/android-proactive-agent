@@ -10,6 +10,8 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -550,6 +552,9 @@ class MainActivity : ComponentActivity(), RecorderListener {
                             composeViewModel.updateStatus("Processing done in ${directTimeTaken}ms: \"$directResult\"")
                         }
                         
+                        // Feed prompt to LLM
+                        submitPromptToLLM(directResult)
+                        
                         Log.i(TAG, "✅ Direct transcription success (${directTimeTaken}ms): \"$directResult\"")
                     } else {
                         Log.w(TAG, "⚠️ Both transcription methods returned empty")
@@ -706,6 +711,18 @@ class MainActivity : ComponentActivity(), RecorderListener {
         @Synchronized
         fun sendSignal() {
             (this as java.lang.Object).notify() // Notifies the waiting thread
+        }
+    }
+
+    private fun submitPromptToLLM(prompt: String) {
+        val llm = mLLMManager ?: return
+        lifecycleScope.launch {
+            val start = System.currentTimeMillis()
+            val response = llm.generateResponse(prompt) ?: ""
+            val duration = System.currentTimeMillis() - start
+            handler.post {
+                composeViewModel.appendLLMResponse(response, duration)
+            }
         }
     }
 
