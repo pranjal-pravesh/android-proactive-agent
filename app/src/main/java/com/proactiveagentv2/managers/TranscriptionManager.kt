@@ -205,24 +205,66 @@ class TranscriptionManager(
             
             coroutineScope.launch {
                 try {
-                    Log.d(TAG, "Submitting transcription to LLM: \"$transcriptionText\"")
+                    Log.d(TAG, "Submitting transcription to enhanced LLM: \"$transcriptionText\"")
                     val startTime = System.currentTimeMillis()
-                    val response = llm.generateResponse(transcriptionText) ?: ""
+                    
+                    // Use enhanced LLM with tool support
+                    val llmResponse = llm.generateEnhancedResponse(
+                        userInput = transcriptionText,
+                        includeContext = true,
+                        useTools = true
+                    )
+                    
                     val duration = System.currentTimeMillis() - startTime
                     
                     withContext(Dispatchers.Main) {
-                        if (response.isNotBlank()) {
-                            viewModel.appendLLMResponse(response, duration)
-                            Log.d(TAG, "LLM response received (${duration}ms): \"$response\"")
+                        if (llmResponse.success && llmResponse.finalText.isNotBlank()) {
+                            // Log tool usage if any
+                            if (llmResponse.hasToolCalls) {
+                                Log.d(TAG, "LLM used ${llmResponse.toolResults.size} tools: ${llmResponse.toolResults.map { it.toolName }}")
+                                llmResponse.toolResults.forEach { toolResult ->
+                                    Log.d(TAG, "Tool ${toolResult.toolName}: ${if (toolResult.success) "SUCCESS" else "FAILED"}")
+                                }
+                            }
+                            
+                            viewModel.appendLLMResponse(llmResponse.finalText, duration)
+                            Log.d(TAG, "Enhanced LLM response received (${duration}ms): \"${llmResponse.finalText}\"")
+                            
+                            // Show tool results in logs for debugging
+                            if (llmResponse.toolResults.isNotEmpty()) {
+                                llmResponse.toolResults.forEach { result ->
+                                    Log.d(TAG, "Tool result - ${result.toolName}: ${result.result}")
+                                }
+                            }
                         } else {
-                            Log.w(TAG, "Empty LLM response received")
+                            Log.w(TAG, "Enhanced LLM response failed or empty: ${llmResponse.error}")
+                            
+                            // Fallback to basic response if enhanced fails
+                            val fallbackResponse = llm.generateResponse(transcriptionText) ?: ""
+                            if (fallbackResponse.isNotBlank()) {
+                                viewModel.appendLLMResponse(fallbackResponse, duration)
+                                Log.d(TAG, "Fallback LLM response used: \"$fallbackResponse\"")
+                            }
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error submitting to LLM", e)
+                    Log.e(TAG, "Error submitting to enhanced LLM", e)
                     // Don't crash the app, just log the error
                     withContext(Dispatchers.Main) {
-                        Log.w(TAG, "LLM processing failed for: \"$transcriptionText\"")
+                        Log.w(TAG, "Enhanced LLM processing failed for: \"$transcriptionText\"")
+                        
+                        // Try basic LLM as fallback
+                        try {
+                            coroutineScope.launch {
+                                val fallbackResponse = llm.generateResponse(transcriptionText) ?: ""
+                                if (fallbackResponse.isNotBlank()) {
+                                    viewModel.appendLLMResponse(fallbackResponse, 0)
+                                    Log.d(TAG, "Fallback response used after error")
+                                }
+                            }
+                        } catch (fallbackError: Exception) {
+                            Log.e(TAG, "Even fallback LLM failed", fallbackError)
+                        }
                     }
                 }
             }
