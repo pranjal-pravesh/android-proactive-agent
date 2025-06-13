@@ -35,26 +35,21 @@ class VADManager(context: Context) {
     private var speechSegmentSamples = mutableListOf<Float>()
     private var isRecordingSpeechSegment = false
     
-    // Rolling audio buffer to capture pre-speech audio (like Python's buffering approach)
+    // SIMPLIFIED BUFFER: Use efficient LinkedList for rolling audio buffer
     private val rollingAudioBuffer = mutableListOf<Float>()
+    private val maxRollingBufferSize = PRE_SPEECH_BUFFER_SIZE + SAMPLE_RATE // 1.5 seconds max
     
     // Callbacks (similar to Python's event handling)
     private var onSpeechStartListener: (() -> Unit)? = null
     private var onSpeechEndListener: ((FloatArray) -> Unit)? = null // Now passes the speech segment
     private var onVADStatusListener: ((Boolean, Float) -> Unit)? = null
     
-    // Audio buffer for processing
+    // SIMPLIFIED BUFFER: Use simple list for audio buffer processing
     private val audioBuffer = mutableListOf<Float>()
     
     // Timer for checking speech end conditions (like Python's timeout mechanism)
-    private val speechEndCheckRunnable = object : Runnable {
-        override fun run() {
-            checkForSpeechEnd()
-            if (isInitialized()) {
-                handler.postDelayed(this, 50) // Check every 50ms for more responsive detection
-            }
-        }
-    }
+    private var speechEndCheckRunnable: Runnable? = null
+    private var isCheckingForSpeechEnd = false
     
     fun initialize(): Boolean {
         val success = vadProcessor.initialize()
@@ -69,56 +64,76 @@ class VADManager(context: Context) {
     fun startVAD() {
         vadProcessor.resetState()
         resetState()
-        handler.post(speechEndCheckRunnable)
-        Log.d(TAG, "VAD started with ${maxSilenceDurationMs}ms silence timeout (Python-like)")
+        startSpeechEndChecking()
+        Log.d(TAG, "VAD started with ${maxSilenceDurationMs}ms silence timeout")
     }
     
     fun stopVAD() {
-        handler.removeCallbacks(speechEndCheckRunnable)
+        stopSpeechEndChecking()
         resetState()
         Log.d(TAG, "VAD stopped")
     }
     
-    // PYTHON-LIKE AUDIO PROCESSING: Process smaller chunks continuously
-    fun processAudioChunk(audioData: FloatArray) {
-        // Add all incoming audio to rolling buffer (for pre-speech capture, like Python)
-        rollingAudioBuffer.addAll(audioData.toList())
-        
-        // Limit rolling buffer size (prevent memory issues)
-        while (rollingAudioBuffer.size > PRE_SPEECH_BUFFER_SIZE + MAX_SAMPLES_FOR_TRANSCRIPTION) {
-            rollingAudioBuffer.removeAt(0)
-        }
-        
-        // THREAD SAFETY FIX: Synchronized access to speech segment buffer
-        // If we're recording a speech segment, add to speech segment buffer (like Python's buffered_audio)
-        synchronized(speechSegmentSamples) {
-            if (isRecordingSpeechSegment) {
-                speechSegmentSamples.addAll(audioData.toList())
-                
-                // Limit speech segment size to prevent memory issues
-                if (speechSegmentSamples.size > MAX_SAMPLES_FOR_TRANSCRIPTION) {
-                    Log.w(TAG, "Speech segment too long (${speechSegmentSamples.size} samples), triggering transcription")
-                    // Use handler to trigger speech end on main thread to avoid nested synchronization
-                    handler.post { forceSpeechEnd() }
-                    return
+    private fun startSpeechEndChecking() {
+        if (speechEndCheckRunnable == null) {
+            speechEndCheckRunnable = object : Runnable {
+                override fun run() {
+                    if (isInitialized() && isCheckingForSpeechEnd) {
+                        checkForSpeechEnd()
+                        handler.postDelayed(this, 100) // Check every 100ms
+                    }
                 }
             }
         }
+        isCheckingForSpeechEnd = true
+        handler.post(speechEndCheckRunnable!!)
+    }
+    
+    private fun stopSpeechEndChecking() {
+        isCheckingForSpeechEnd = false
+        speechEndCheckRunnable?.let { handler.removeCallbacks(it) }
+    }
+    
+    // SIMPLIFIED AUDIO PROCESSING: More efficient approach
+    fun processAudioChunk(audioData: FloatArray) {
+        // PERFORMANCE FIX: Prevent buffer overflow - drop old data instead of expensive operations
+        if (audioBuffer.size > SAMPLE_RATE * 3) { // If more than 3 seconds backlog
+            audioBuffer.clear()
+            Log.w(TAG, "Audio buffer overflow cleared")
+        }
         
-        // Add audio data to processing buffer
+        // Add to rolling buffer efficiently
+        rollingAudioBuffer.addAll(audioData.toList())
+        
+        // PERFORMANCE FIX: Efficient buffer size management
+        if (rollingAudioBuffer.size > maxRollingBufferSize) {
+            val excessSamples = rollingAudioBuffer.size - maxRollingBufferSize
+            repeat(excessSamples) {
+                rollingAudioBuffer.removeAt(0)
+            }
+        }
+        
+        // If recording speech segment, add to speech buffer
+        if (isRecordingSpeechSegment) {
+            speechSegmentSamples.addAll(audioData.toList())
+            
+            // Limit speech segment size
+            if (speechSegmentSamples.size > MAX_SAMPLES_FOR_TRANSCRIPTION) {
+                Log.w(TAG, "Speech segment too long, triggering transcription")
+                handler.post { forceSpeechEnd() }
+                return
+            }
+        }
+        
+        // Add to processing buffer
         audioBuffer.addAll(audioData.toList())
         
-        // Process in chunks of 512 samples (32ms at 16kHz) - VAD model requirement
+        // Process in chunks of 512 samples (32ms at 16kHz)
         while (audioBuffer.size >= SileroVADProcessor.WINDOW_SIZE_SAMPLES) {
-            val chunk = FloatArray(SileroVADProcessor.WINDOW_SIZE_SAMPLES)
-            
-            // Copy first N elements to chunk
-            for (i in 0 until SileroVADProcessor.WINDOW_SIZE_SAMPLES) {
-                chunk[i] = audioBuffer[i]
+            val chunk = audioBuffer.take(SileroVADProcessor.WINDOW_SIZE_SAMPLES).toFloatArray()
+            repeat(SileroVADProcessor.WINDOW_SIZE_SAMPLES) {
+                audioBuffer.removeAt(0)
             }
-            
-            // Remove the first N elements efficiently
-            audioBuffer.subList(0, SileroVADProcessor.WINDOW_SIZE_SAMPLES).clear()
             
             // Process through VAD
             val speechProb = vadProcessor.processAudio(chunk)
@@ -126,7 +141,7 @@ class VADManager(context: Context) {
         }
     }
     
-    // PYTHON-LIKE VAD RESULT PROCESSING: Similar to Python's speech detection logic
+    // SIMPLIFIED VAD RESULT PROCESSING
     private fun processVADResult(speechProb: Float) {
         val currentTime = System.currentTimeMillis()
         val isSpeech = speechProb > speechThreshold
@@ -136,21 +151,20 @@ class VADManager(context: Context) {
         
         when {
             isSpeech && !isSpeechDetected -> {
-                // Speech started (like Python's speech detection begin)
+                // Speech started
                 isSpeechDetected = true
                 speechStartTime = currentTime
                 lastSpeechTime = currentTime
                 silenceStartTime = 0L
                 
-                // THREAD SAFETY FIX: Synchronized access when starting speech recording
-                // Start recording speech segment and include pre-speech buffer (like Python)
-                synchronized(speechSegmentSamples) {
-                    isRecordingSpeechSegment = true
-                    speechSegmentSamples.clear()
-                    
-                    // Add recent audio from rolling buffer (pre-speech context, like Python's buffering)
-                    val preSpeechSamples = minOf(PRE_SPEECH_BUFFER_SIZE, rollingAudioBuffer.size)
-                    val startIndex = maxOf(0, rollingAudioBuffer.size - preSpeechSamples)
+                // Start recording speech segment and include pre-speech buffer
+                isRecordingSpeechSegment = true
+                speechSegmentSamples.clear()
+                
+                // Add recent audio from rolling buffer (pre-speech context)
+                val preSpeechSamples = minOf(PRE_SPEECH_BUFFER_SIZE, rollingAudioBuffer.size)
+                if (preSpeechSamples > 0) {
+                    val startIndex = rollingAudioBuffer.size - preSpeechSamples
                     speechSegmentSamples.addAll(rollingAudioBuffer.subList(startIndex, rollingAudioBuffer.size))
                 }
                 
@@ -159,24 +173,23 @@ class VADManager(context: Context) {
             }
             
             isSpeech && isSpeechDetected -> {
-                // Continuing speech (update last speech time, like Python)
+                // Continuing speech
                 lastSpeechTime = currentTime
-                silenceStartTime = 0L // Reset silence timer
+                silenceStartTime = 0L
             }
             
             !isSpeech && isSpeechDetected -> {
-                // Potential silence during speech (like Python's silence detection)
+                // Potential silence during speech
                 if (speechProb < silenceThreshold) {
                     if (silenceStartTime == 0L) {
                         silenceStartTime = currentTime
                     }
-                    // Don't reset lastSpeechTime here, let the timeout handle it
                 }
             }
         }
     }
     
-    // PYTHON-LIKE SPEECH END DETECTION: Similar to Python's timeout-based speech end detection
+    // SIMPLIFIED SPEECH END DETECTION
     private fun checkForSpeechEnd() {
         if (!isSpeechDetected) return
         
@@ -184,40 +197,35 @@ class VADManager(context: Context) {
         val speechDuration = currentTime - speechStartTime
         val silenceDuration = if (silenceStartTime > 0) currentTime - silenceStartTime else 0
         
-        // Check if we should end speech detection (like Python's 1 second timeout)
         val shouldEndSpeech = speechDuration >= minSpeechDurationMs && 
                              silenceDuration >= maxSilenceDurationMs
         
         if (shouldEndSpeech) {
-            Log.d(TAG, "Speech end detected: speech=${speechDuration}ms, silence=${silenceDuration}ms (Python-like timeout)")
+            Log.d(TAG, "Speech end detected: speech=${speechDuration}ms, silence=${silenceDuration}ms")
             forceSpeechEnd()
         }
     }
     
-    // PYTHON-LIKE SPEECH END PROCESSING: Similar to Python's _process_speech method
+    // SIMPLIFIED SPEECH END PROCESSING
     private fun forceSpeechEnd() {
         val speechDuration = System.currentTimeMillis() - speechStartTime
         val silenceDuration = if (silenceStartTime > 0) System.currentTimeMillis() - silenceStartTime else 0
         
         Log.d(TAG, "Speech ended - duration: ${speechDuration}ms, silence: ${silenceDuration}ms, samples: ${speechSegmentSamples.size}")
         
-        // Stop recording speech segment and create a safe copy to avoid ConcurrentModificationException
+        // Stop recording and create copy
         isRecordingSpeechSegment = false
-        
-        // THREAD SAFETY FIX: Create a synchronized copy of the speech samples
-        val speechSamplesCopy = synchronized(speechSegmentSamples) {
-            speechSegmentSamples.toFloatArray()
-        }
+        val speechSamplesCopy = speechSegmentSamples.toFloatArray()
         
         val speechSegment = prepareSpeechSegmentForTranscription(speechSamplesCopy)
         
-        // Reset state before calling listener (like Python)
+        // Reset state
         isSpeechDetected = false
         resetSpeechSegmentState()
         
-        // Call listener with the speech segment (like Python's transcription trigger)
+        // Call listener
         if (speechSegment.isNotEmpty()) {
-            Log.d(TAG, "Triggering transcription for ${speechSegment.size} samples (${speechSegment.size / SAMPLE_RATE.toFloat()}s)")
+            Log.d(TAG, "Triggering transcription for ${speechSegment.size} samples")
             onSpeechEndListener?.invoke(speechSegment)
         } else {
             Log.w(TAG, "Speech segment too short for transcription")
@@ -225,14 +233,12 @@ class VADManager(context: Context) {
     }
     
     private fun prepareSpeechSegmentForTranscription(rawSegment: FloatArray): FloatArray {
-        // Check minimum length
         if (rawSegment.size < MIN_SAMPLES_FOR_TRANSCRIPTION) {
-            Log.w(TAG, "Speech segment too short: ${rawSegment.size} samples (need at least $MIN_SAMPLES_FOR_TRANSCRIPTION)")
+            Log.w(TAG, "Speech segment too short: ${rawSegment.size} samples")
             return FloatArray(0)
         }
         
-        // Use the segment as-is (don't pad for shorter segments as file-based transcription handles this)
-        Log.d(TAG, "Prepared speech segment: ${rawSegment.size} samples (${rawSegment.size / SAMPLE_RATE.toFloat()} seconds)")
+        Log.d(TAG, "Prepared speech segment: ${rawSegment.size} samples")
         return rawSegment
     }
     
@@ -247,11 +253,9 @@ class VADManager(context: Context) {
     }
     
     private fun resetSpeechSegmentState() {
-        synchronized(speechSegmentSamples) {
-            isRecordingSpeechSegment = false
-            speechSegmentSamples.clear()
-            currentSpeechSegment.reset()
-        }
+        isRecordingSpeechSegment = false
+        speechSegmentSamples.clear()
+        currentSpeechSegment.reset()
     }
     
     fun setOnSpeechStartListener(listener: () -> Unit) {

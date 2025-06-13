@@ -223,8 +223,6 @@ class MainActivity : ComponentActivity(), RecorderListener {
             }
         }
 
-
-
         mVADManager?.setOnVADStatusListener { isSpeech, probability ->
             handler.post {
                 composeViewModel.updateVadStatus(isSpeech, probability)
@@ -441,7 +439,7 @@ class MainActivity : ComponentActivity(), RecorderListener {
     private fun transcribeSpeechSegment(audioSamples: FloatArray) {
         Thread {
             try {
-                Log.d(TAG, "Starting transcription of speech segment with ${audioSamples.size} samples (${audioSamples.size / 16000.0f} seconds)")
+                Log.d(TAG, "Starting transcription of speech segment with ${audioSamples.size} samples")
                 
                 if (audioSamples.isEmpty()) {
                     Log.w(TAG, "Received empty audio samples for transcription")
@@ -451,81 +449,58 @@ class MainActivity : ComponentActivity(), RecorderListener {
                     return@Thread
                 }
                 
-                // STEP 1 & 2: Audio Quality Checks
-                val maxSample = audioSamples.maxOrNull() ?: 0f
-                val minSample = audioSamples.minOrNull() ?: 0f
+                // Set transcription flag
+                isTranscribing = true
+                
+                // Quick audio quality check
                 val rms = kotlin.math.sqrt(audioSamples.fold(0f) { acc, s -> acc + s * s } / audioSamples.size)
-                val rmsDb = 20 * kotlin.math.log10(rms + 1e-10) // Add small value to avoid log(0)
-                val peakDb = 20 * kotlin.math.log10(kotlin.math.max(kotlin.math.abs(maxSample), kotlin.math.abs(minSample)) + 1e-10)
                 
-                Log.d(TAG, "=== AUDIO QUALITY CHECK ===")
-                Log.d(TAG, "Peak sample range: $minSample to $maxSample")
-                Log.d(TAG, "RMS: $rms (${String.format("%.1f", rmsDb)} dB)")
-                Log.d(TAG, "Peak: ${String.format("%.1f", peakDb)} dB")
-                Log.d(TAG, "Expected: samples -1.0 to 1.0, RMS > -30dB, Peak > -6dB")
-                
-                // STEP 4: Guard against silence segments
-                if (rms < 0.015f) { // ≈-42 dB threshold
-                    Log.w(TAG, "❌ DISCARDED: RMS ${String.format("%.4f", rms)} (${String.format("%.1f", rmsDb)} dB) too low - likely silence")
+                // Guard against silence segments  
+                if (rms < 0.015f) {
+                    Log.w(TAG, "Discarded silence segment (RMS: ${String.format("%.4f", rms)})")
                     handler.post {
                         composeViewModel.updateStatus("Recording - Listening... (silence segment skipped)")
                     }
                     return@Thread
                 }
                 
-                // Check for scaling issues
-                if (maxSample > 1.0f || minSample < -1.0f) {
-                    Log.w(TAG, "⚠️ WARNING: Audio samples outside expected -1.0 to 1.0 range!")
-                }
-                
-                // Set transcription flag
-                isTranscribing = true
-                
-                // STEP 3: Save segment for debugging (like Python's debug file saving)
+                // Save segment for debugging and playback
                 val timestamp = System.currentTimeMillis()
                 val segmentFileName = "segment_${timestamp}.wav"
                 val segmentWaveFile = File(sdcardDataFolder, segmentFileName)
-                lastTranscribedSegmentFile = segmentWaveFile // Update reference for playback
+                lastTranscribedSegmentFile = segmentWaveFile
                 
                 // Update status during processing
                 handler.post {
                     composeViewModel.updateStatus("Recording - Transcribing speech segment...")
                 }
                 
-                Log.d(TAG, "💾 Saving audio segment: ${segmentWaveFile.absolutePath}")
+                Log.d(TAG, "Saving audio segment: ${segmentWaveFile.absolutePath}")
                 val audioBytes = floatArrayToByteArray(audioSamples)
                 WaveUtil.createWaveFile(segmentWaveFile.absolutePath, audioBytes, 16000, 1, 2)
                 
                 if (!segmentWaveFile.exists()) {
-                    Log.e(TAG, "❌ Failed to save audio segment file")
+                    Log.e(TAG, "Failed to save audio segment file")
                     handler.post {
                         composeViewModel.updateStatus("Recording - Listening... (transcription failed)")
                     }
                     return@Thread
                 }
                 
-                // AUDIO PREPROCESSING (like Python's preprocessing)
+                // Simple audio preprocessing
                 val trimmedSamples = trimTrailingSilence(audioSamples)
-                val paddedSamples = padToWindow(trimmedSamples)
                 
-                Log.d(TAG, "🔧 Audio preprocessing completed:")
-                Log.d(TAG, "   Original: ${audioSamples.size} samples (${audioSamples.size / 16000.0f}s)")
-                Log.d(TAG, "   Trimmed:  ${trimmedSamples.size} samples (${trimmedSamples.size / 16000.0f}s)")
-                Log.d(TAG, "   Padded:   ${paddedSamples.size} samples (${paddedSamples.size / 16000.0f}s)")
-                
-                // TRY BOTH TRANSCRIPTION METHODS TO DEBUG THE ISSUE
-                
-                // METHOD 1: Direct array transcription (faster but might have issues)
-                Log.d(TAG, "🚀 Trying direct array transcription...")
+                // Try direct array transcription
+                Log.d(TAG, "Starting direct array transcription...")
                 val startTime = System.currentTimeMillis()
-                val directResult = mWhisper?.transcribeFromArray(paddedSamples, "en") ?: ""
+                val directResult = mWhisper?.transcribeFromArray(trimmedSamples, "en") ?: ""
                 val directTimeTaken = System.currentTimeMillis() - startTime
                 
-                Log.d(TAG, "📋 Direct transcription result (${directTimeTaken}ms): \"$directResult\"")
+                Log.d(TAG, "Direct transcription result (${directTimeTaken}ms): \"$directResult\"")
                 
-                // If direct transcription fails or returns empty, try file-based transcription
+                // If direct transcription fails, try file-based transcription
                 if (directResult.isBlank() && segmentWaveFile.exists()) {
-                    Log.d(TAG, "⚠️ Direct transcription empty, trying file-based transcription...")
+                    Log.d(TAG, "Direct transcription empty, trying file-based transcription...")
                     
                     handler.post {
                         // Use file-based transcription as fallback
@@ -541,10 +516,8 @@ class MainActivity : ComponentActivity(), RecorderListener {
                 // Update UI with direct transcription result
                 handler.post {
                     if (!directResult.isBlank()) {
-                        Log.d(TAG, "Updating UI with direct transcription: \"$directResult\"")
-                        Log.d(TAG, "Before update - transcription: \"${composeViewModel.appState.transcriptionText}\"")
+                        Log.d(TAG, "Updating UI with transcription: \"$directResult\"")
                         composeViewModel.updateTranscription(directResult)
-                        Log.d(TAG, "After update - transcription: \"${composeViewModel.appState.transcriptionText}\"")
                         
                         if (composeViewModel.appState.isRecording) {
                             composeViewModel.updateStatus("Recording - Listening... (${directTimeTaken}ms: \"$directResult\")")
@@ -555,9 +528,9 @@ class MainActivity : ComponentActivity(), RecorderListener {
                         // Feed prompt to LLM
                         submitPromptToLLM(directResult)
                         
-                        Log.i(TAG, "✅ Direct transcription success (${directTimeTaken}ms): \"$directResult\"")
+                        Log.i(TAG, "Direct transcription success (${directTimeTaken}ms): \"$directResult\"")
                     } else {
-                        Log.w(TAG, "⚠️ Both transcription methods returned empty")
+                        Log.w(TAG, "Both transcription methods returned empty")
                         if (composeViewModel.appState.isRecording) {
                             composeViewModel.updateStatus("Recording - Listening... (no speech detected)")
                         } else {
@@ -567,13 +540,14 @@ class MainActivity : ComponentActivity(), RecorderListener {
                 }
                 
             } catch (e: Exception) {
-                Log.e(TAG, "❌ Error in direct transcription", e)
+                Log.e(TAG, "Error in transcription", e)
                 handler.post {
                     composeViewModel.updateStatus("Recording - Listening... (transcription error: ${e.message})")
                 }
             } finally {
                 // Always reset transcription flag
                 isTranscribing = false
+                Log.d(TAG, "Transcription completed, flag reset")
             }
         }.start()
     }
