@@ -6,222 +6,154 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.launch
-
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
-import com.proactiveagentv2.asr.Player
-import com.proactiveagentv2.asr.Player.PlaybackListener
-import com.proactiveagentv2.asr.Recorder
-import com.proactiveagentv2.asr.Recorder.RecorderListener
-import com.proactiveagentv2.asr.Whisper
-import com.proactiveagentv2.asr.Whisper.WhisperListener
+import androidx.lifecycle.lifecycleScope
+import com.proactiveagentv2.managers.*
 import com.proactiveagentv2.ui.MainScreen
 import com.proactiveagentv2.ui.MainViewModel
 import com.proactiveagentv2.ui.SettingsDialog
-import com.proactiveagentv2.ui.SettingsState
 import com.proactiveagentv2.ui.theme.WhisperNativeTheme
-import com.proactiveagentv2.utils.WaveUtil
-import com.proactiveagentv2.vad.VADManager
-import com.proactiveagentv2.llm.LLMManager
-import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
 
-
-class MainActivity : ComponentActivity(), RecorderListener {
+/**
+ * Main activity for the Proactive Agent application
+ * Orchestrates all managers and handles the UI lifecycle
+ */
+class MainActivity : ComponentActivity() {
+    
+    // ViewModels
     private val composeViewModel: MainViewModel by viewModels()
-
-    private var mPlayer: Player? = null
-    private var mRecorder: Recorder? = null
-    private var mWhisper: Whisper? = null
-    private var mVADManager: VADManager? = null
-    private var mLLMManager: LLMManager? = null
-
-    private var sdcardDataFolder: File? = null
-    private var selectedTfliteFile: File? = null
-
-    private var startTime: Long = 0
-    private val loopTesting = false
-    private val transcriptionSync = SharedResource()
+    
+    // Manager instances
+    private lateinit var appInitializer: AppInitializer
+    private lateinit var audioSessionManager: AudioSessionManager
+    private lateinit var transcriptionManager: TranscriptionManager
+    private lateinit var settingsManager: SettingsManager
+    private lateinit var uiCoordinator: UICoordinator
+    
     private val handler = Handler(Looper.getMainLooper())
-
-    private var isRecording = false
-    private var isTranscribing = false
-    
-    // For debugging and playback of last transcribed segment
-    private var lastTranscribedSegmentFile: File? = null
-    
-    // Recording duration setting (0 means never stop)
-    private var maxRecordingDurationMinutes = 30
-
-
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        initializeComposeUI()
-    }
-    
-    private fun initializeComposeUI() {
-        setContent {
-            val isSettingsDialogVisible = remember { mutableStateOf(false) }
+        
+        Log.d(TAG, "=== Starting MainActivity initialization ===")
+        
+        try {
+            initializeManagers()
+            initializeApplication()
+            setupUI()
+            checkPermissions()
             
-            WhisperNativeTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    MainScreen(
-                        appState = composeViewModel.appState,
-                        onRecordClick = { handleRecordClick() },
-                        onPlayClick = { handlePlayClick() },
-                        onClearClick = { 
-                            composeViewModel.clearTranscription()
-                            Toast.makeText(this@MainActivity, "Transcription cleared", Toast.LENGTH_SHORT).show()
-                        },
-                        onSettingsClick = { isSettingsDialogVisible.value = true }
-                    )
-                    
-                    // Settings Dialog
-                    val vadMgr = mVADManager
-                    if (vadMgr != null) {
-                        SettingsDialog(
-                            isVisible = isSettingsDialogVisible.value,
-                            currentSettings = SettingsState(
-                                speechThreshold = vadMgr.speechThreshold,
-                                silenceThreshold = vadMgr.silenceThreshold,
-                                minSpeechDurationMs = vadMgr.minSpeechDurationMs,
-                                maxSilenceDurationMs = vadMgr.maxSilenceDurationMs,
-                                selectedModelFile = selectedTfliteFile,
-                                maxRecordingDurationMinutes = maxRecordingDurationMinutes
-                            ),
-                            availableModels = composeViewModel.appState.modelFiles,
-                            llmManager = mLLMManager,
-                            onDismiss = { isSettingsDialogVisible.value = false },
-                            onSaveSettings = { newSettings ->
-                                // Update VAD settings
-                                vadMgr.speechThreshold = newSettings.speechThreshold
-                                vadMgr.silenceThreshold = newSettings.silenceThreshold
-                                vadMgr.minSpeechDurationMs = newSettings.minSpeechDurationMs
-                                vadMgr.maxSilenceDurationMs = newSettings.maxSilenceDurationMs
-                                
-                                // Update recording duration setting
-                                maxRecordingDurationMinutes = newSettings.maxRecordingDurationMinutes
-                                
-                                // Update model if changed
-                                if (newSettings.selectedModelFile != selectedTfliteFile) {
-                                    newSettings.selectedModelFile?.let { file ->
-                                        Log.d(TAG, "Model changed to: ${file.name}")
-                                        deinitModel()
-                                        selectedTfliteFile = file
-                                        composeViewModel.selectModelFile(file)
-                                        initModel(file)
-                                    }
-                                }
-                                
-                                Toast.makeText(this@MainActivity, "Settings saved", Toast.LENGTH_SHORT).show()
-                                Log.d(TAG, "Settings updated: $newSettings")
-                            }
-                        )
-                    }
-                }
-            }
+            Log.d(TAG, "=== MainActivity initialization completed successfully ===")
+        } catch (e: Exception) {
+            Log.e(TAG, "Fatal error during MainActivity initialization", e)
+            uiCoordinator.showError("Application failed to start: ${e.message}")
         }
-        
-        // Initialize backend
-        initializeBackend()
     }
     
-    private fun initializeBackend() {
-        Log.d(TAG, "=== Initializing backend ===")
+    private fun initializeManagers() {
+        Log.d(TAG, "Initializing manager instances...")
         
-        sdcardDataFolder = this.getExternalFilesDir(null)
-        copyAssetsToSdcard(this, sdcardDataFolder, EXTENSIONS_TO_COPY)
-
-        val tfliteFiles = getFilesWithExtension(sdcardDataFolder, ".tflite")
-
-        Log.d(TAG, "Found ${tfliteFiles.size} model files: ${tfliteFiles.map { it.name }}")
-
-        // Update ViewModel
-        composeViewModel.updateModelFiles(tfliteFiles)
+        // Create manager instances
+        appInitializer = AppInitializer(this, composeViewModel)
+        audioSessionManager = AudioSessionManager(this, composeViewModel)
+        transcriptionManager = TranscriptionManager(this, composeViewModel, lifecycleScope)
+        settingsManager = SettingsManager(this, composeViewModel)
+        uiCoordinator = UICoordinator(this, composeViewModel)
         
-        // Set default model and initialize it
-        selectedTfliteFile = File(sdcardDataFolder, DEFAULT_MODEL_TO_USE)
-        Log.d(TAG, "Default model: ${selectedTfliteFile?.absolutePath}")
-        Log.d(TAG, "Default model exists: ${selectedTfliteFile?.exists()}")
+        Log.d(TAG, "Manager instances created")
+    }
+    
+    private fun initializeApplication() {
+        Log.d(TAG, "Initializing application components...")
         
-        if (selectedTfliteFile?.exists() == true) {
-            composeViewModel.selectModelFile(selectedTfliteFile!!)
-            Log.d(TAG, "Initializing default model...")
-            initModel(selectedTfliteFile!!)
-            Log.d(TAG, "Model initialization completed")
-        } else {
-            Log.w(TAG, "Default model not found: $DEFAULT_MODEL_TO_USE")
-        }
-
-        // Initialize audio components
-        mRecorder = Recorder(this)
-        mRecorder?.setListener(this)
-
-        mPlayer = Player(this)
-        mPlayer?.setListener(object : PlaybackListener {
-            override fun onPlaybackStarted() {
-                composeViewModel.updatePlayingState(true)
+        // Initialize core application
+        val initResult = appInitializer.initialize()
+        when (initResult) {
+            is AppInitializer.InitializationResult.Success -> {
+                Log.d(TAG, "Application core initialized successfully")
             }
-
-            override fun onPlaybackStopped() {
-                composeViewModel.updatePlayingState(false)
+            is AppInitializer.InitializationResult.Error -> {
+                throw IllegalStateException("Application initialization failed: ${initResult.message}")
             }
-        })
-
-        // Initialize VAD Manager
-        mVADManager = VADManager(this)
-        val vadInitialized = mVADManager?.initialize() ?: false
-        Log.d(TAG, "VAD Manager initialization: $vadInitialized")
-        
-        if (!vadInitialized) {
-            Log.e(TAG, "Failed to initialize VAD Manager")
-            showError("Failed to initialize Voice Activity Detection")
-            return
         }
-
+        
+        // Initialize audio session manager
+        audioSessionManager.initialize(
+            recorder = appInitializer.recorder!!,
+            player = appInitializer.player!!,
+            vadManager = appInitializer.vadManager!!,
+            dataFolder = getExternalFilesDir(null)!!
+        )
+        
+        // Initialize transcription manager
+        transcriptionManager.initialize(
+            whisper = appInitializer.whisper!!,
+            dataFolder = getExternalFilesDir(null)!!,
+            llmManager = appInitializer.llmManager
+        )
+        
+        // Initialize settings manager
+        settingsManager.initialize(
+            vadManager = appInitializer.vadManager!!,
+            appInitializer = appInitializer,
+            audioSessionManager = audioSessionManager
+        )
+        
+        // Initialize UI coordinator
+        uiCoordinator.initialize(
+            appInitializer = appInitializer,
+            audioSessionManager = audioSessionManager,
+            transcriptionManager = transcriptionManager,
+            settingsManager = settingsManager
+        )
+        
+        setupManagerCallbacks()
+        
+        Log.d(TAG, "All managers initialized successfully")
+    }
+    
+    private fun setupManagerCallbacks() {
+        Log.d(TAG, "Setting up manager callbacks...")
+        
+        // Audio session callbacks
+        audioSessionManager.onAudioDataReceived = { audioData ->
+            appInitializer.vadManager?.processAudioChunk(audioData)
+        }
+        
+        // Transcription callbacks
+        transcriptionManager.onTranscriptionComplete = { segmentFile ->
+            audioSessionManager.setLastTranscribedSegment(segmentFile)
+        }
+        
+        // VAD callbacks
         setupVADCallbacks()
         
-        // Initialize LLM Manager
-        mLLMManager = LLMManager(this)
-        Log.d(TAG, "LLM Manager initialized")
-        
-        checkRecordPermission()
-        
-        Log.d(TAG, "=== Backend initialization completed ===")
-        Log.d(TAG, "Whisper engine status: ${if (mWhisper != null) "✅ READY" else "❌ NOT INITIALIZED"}")
-        Log.d(TAG, "LLM Manager status: ${if (mLLMManager != null) "✅ READY" else "❌ NOT INITIALIZED"}")
+        Log.d(TAG, "Manager callbacks configured")
     }
     
     private fun setupVADCallbacks() {
-        mVADManager?.setOnSpeechStartListener {
+        appInitializer.vadManager?.setOnSpeechStartListener {
             handler.post {
                 composeViewModel.updateStatus("Speech detected...")
+                uiCoordinator.updateVADIndicator(true)
             }
         }
 
-        mVADManager?.setOnSpeechEndListener { audioSamples ->
+        appInitializer.vadManager?.setOnSpeechEndListener { audioSamples ->
             handler.post {
                 composeViewModel.updateStatus("Processing speech...")
+                uiCoordinator.updateVADIndicator(false)
             }
             
-            if (!isTranscribing) {
-                transcribeSpeechSegment(audioSamples)
+            if (!transcriptionManager.isCurrentlyTranscribing()) {
+                transcriptionManager.transcribeSpeechSegment(audioSamples)
             } else {
                 Log.w(TAG, "Transcription in progress, skipping new speech segment")
                 handler.post {
@@ -230,7 +162,7 @@ class MainActivity : ComponentActivity(), RecorderListener {
             }
         }
 
-        mVADManager?.setOnVADStatusListener { isSpeech, probability ->
+        appInitializer.vadManager?.setOnVADStatusListener { isSpeech, probability ->
             handler.post {
                 composeViewModel.updateVadStatus(isSpeech, probability)
                 
@@ -245,523 +177,97 @@ class MainActivity : ComponentActivity(), RecorderListener {
             }
         }
     }
-
-    override fun onDestroy() {
-        super.onDestroy()
+    
+    private fun setupUI() {
+        Log.d(TAG, "Setting up Compose UI...")
         
-        // Release VAD resources
-        mVADManager?.release()
-        mVADManager = null
-        
-        // Release LLM resources
-        mLLMManager?.release()
-        mLLMManager = null
-        
-        // Clean up last transcribed segment file
-        lastTranscribedSegmentFile?.let { file ->
-            try {
-                if (file.exists()) {
-                    file.delete()
-                    Log.d(TAG, "Cleaned up last transcribed segment file")
-                } else {
-                    Log.d(TAG, "Last transcribed segment file does not exist")
+        setContent {
+            WhisperNativeTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    MainScreen(
+                        appState = composeViewModel.appState,
+                        onRecordClick = { uiCoordinator.handleRecordButtonClick() },
+                        onPlayClick = { uiCoordinator.handlePlayButtonClick() },
+                        onClearClick = { uiCoordinator.handleClearButtonClick() },
+                        onSettingsClick = { uiCoordinator.handleSettingsButtonClick() }
+                    )
+                    
+                    // Settings Dialog
+                    SettingsDialog(
+                        isVisible = uiCoordinator.isSettingsDialogVisible.value,
+                        currentSettings = uiCoordinator.getCurrentSettings(),
+                        availableModels = uiCoordinator.getAvailableModels(),
+                        llmManager = uiCoordinator.getLLMManager(),
+                        onDismiss = { uiCoordinator.handleSettingsDialogDismiss() },
+                        onSaveSettings = { newSettings ->
+                            uiCoordinator.handleSettingsSave(newSettings)
+                        }
+                    )
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to clean up last transcribed segment file", e)
             }
         }
         
-        // Clean up other resources
-        mPlayer = null
-        mRecorder = null
-        deinitModel()
-        
-        Log.d(TAG, "MainActivity destroyed, resources released")
+        Log.d(TAG, "Compose UI setup completed")
     }
-
-    // Model initialization
-    private fun initModel(modelFile: File) {
-        val isMultilingualModel = !(modelFile.name.endsWith(ENGLISH_ONLY_MODEL_EXTENSION))
-        val vocabFileName =
-            if (isMultilingualModel) MULTILINGUAL_VOCAB_FILE else ENGLISH_ONLY_VOCAB_FILE
-        val vocabFile = File(sdcardDataFolder, vocabFileName)
-
-        mWhisper = Whisper(this)
-        mWhisper!!.loadModel(modelFile, vocabFile, isMultilingualModel)
-        mWhisper?.setListener(object : WhisperListener {
-            override fun onUpdateReceived(message: String?) {
-                Log.d(TAG, "Update is received, Message: $message")
-
-                if (message == Whisper.MSG_PROCESSING) {
-                    handler.post { 
-                        composeViewModel.updateStatus("Recording - Transcribing previous speech...")
-                    }
-                    startTime = System.currentTimeMillis()
-                }
-                if (message == Whisper.MSG_PROCESSING_DONE) {
-                    handler.post {
-                        composeViewModel.updateStatus("Recording - Listening...")
-                    }
-                    // for testing
-                    if (loopTesting) transcriptionSync.sendSignal()
-                } else if (message == Whisper.MSG_FILE_NOT_FOUND) {
-                    handler.post { 
-                        composeViewModel.updateStatus(message ?: "File not found")
-                    }
-                    Log.d(TAG, "File not found error...!")
-                }
-            }
-
-            override fun onResultReceived(result: String?) {
-                val timeTaken = System.currentTimeMillis() - startTime
-                
-                Log.d(TAG, "Result: $result")
-                handler.post { 
-                    if (!result.isNullOrBlank()) {
-                        Log.d(TAG, "Updating UI with transcription: \"$result\"")
-                        Log.d(TAG, "Before update - transcription: \"${composeViewModel.appState.transcriptionText}\"")
-                        composeViewModel.updateTranscription(result)
-                        Log.d(TAG, "After update - transcription: \"${composeViewModel.appState.transcriptionText}\"")
-                        Log.d(TAG, "AppState object reference: ${composeViewModel.appState}")
-                        
-                        // Show completion status with result preview
-                        if (composeViewModel.appState.isRecording) {
-                            composeViewModel.updateStatus("Recording - Listening... (last: \"$result\")")
-                        } else {
-                            composeViewModel.updateStatus("Processing done in ${timeTaken}ms: \"$result\"")
-                        }
-                        
-                        Log.i(TAG, "Successfully transcribed: \"$result\"")
-                    } else {
-                        Log.w(TAG, "Empty transcription result")
-                        if (composeViewModel.appState.isRecording) {
-                            composeViewModel.updateStatus("Recording - Listening... (no speech detected)")
-                        } else {
-                            composeViewModel.updateStatus("Processing done - no speech detected")
-                        }
-                    }
-                }
-            }
-        })
-    }
-
-    private fun deinitModel() {
-        if (mWhisper != null) {
-            mWhisper!!.unloadModel()
-            mWhisper = null
-        }
-    }
-
-    private fun checkRecordPermission() {
+    
+    private fun checkPermissions() {
         val permission = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
         if (permission == PackageManager.PERMISSION_GRANTED) {
-            Log.d(TAG, "Record permission is granted")
+            Log.d(TAG, "Audio recording permission granted")
         } else {
-            Log.d(TAG, "Requesting record permission")
-            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 0)
+            Log.d(TAG, "Requesting audio recording permission")
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), PERMISSION_REQUEST_CODE)
         }
     }
-
+    
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<String>,
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (grantResults.size > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            Log.d(TAG, "Record permission is granted")
-        } else {
-            Log.d(TAG, "Record permission is not granted")
-        }
-    }
-
-    private fun handleRecordClick() {
-        if (mRecorder != null && mRecorder!!.isInProgress) {
-            Log.d(TAG, "Recording is in progress... stopping...")
-            stopRecording()
-        } else {
-            Log.d(TAG, "Start recording...")
-            startRecording()
-        }
-    }
-
-    private fun handlePlayClick() {
-        if (mPlayer?.isPlaying == false) {
-            val fileToPlay = when {
-                lastTranscribedSegmentFile?.exists() == true -> {
-                    Log.d(TAG, "Playing last transcribed segment: ${lastTranscribedSegmentFile?.name}")
-                    Toast.makeText(this, "Playing last transcribed segment", Toast.LENGTH_SHORT).show()
-                    lastTranscribedSegmentFile!!
-                }
-                File(sdcardDataFolder, WaveUtil.RECORDING_FILE).exists() -> {
-                    val recordingFile = File(sdcardDataFolder, WaveUtil.RECORDING_FILE)
-                    Log.d(TAG, "Playing recording file: ${recordingFile.name}")
-                    Toast.makeText(this, "Playing last recording", Toast.LENGTH_SHORT).show()
-                    recordingFile
-                }
-                else -> {
-                    Toast.makeText(this, "No audio recording available to play", Toast.LENGTH_SHORT).show()
-                    return
+        
+        when (requestCode) {
+            PERMISSION_REQUEST_CODE -> {
+                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    Log.d(TAG, "Audio recording permission granted")
+                    uiCoordinator.showSuccess("Audio recording permission granted")
+                } else {
+                    Log.w(TAG, "Audio recording permission denied")
+                    uiCoordinator.showError("Audio recording permission is required for the app to function")
                 }
             }
+        }
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        
+        Log.d(TAG, "=== Starting MainActivity cleanup ===")
+        
+        try {
+            // Release managers in reverse initialization order
+            uiCoordinator.release()
+            settingsManager.release()
+            transcriptionManager.release()
+            audioSessionManager.release()
+            appInitializer.release()
             
-            mPlayer?.initializePlayer(fileToPlay.absolutePath)
-            mPlayer?.startPlayback()
-        } else {
-            mPlayer?.stopPlayback()
+            Log.d(TAG, "=== MainActivity cleanup completed ===")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during MainActivity cleanup", e)
         }
     }
 
-    // Recording calls
-    private fun startRecording() {
-        checkRecordPermission()
-
-        val waveFile = File(sdcardDataFolder, WaveUtil.RECORDING_FILE)
-        mRecorder!!.setFilePath(waveFile.absolutePath)
-        
-        // Configure recording duration
-        mRecorder!!.setMaxRecordingDuration(maxRecordingDurationMinutes)
-        
-        // Start VAD processing
-        mVADManager?.startVAD()
-        
-        mRecorder!!.start()
-        
-        Log.d(TAG, "Recording started with VAD processing")
-    }
-
-    private fun stopRecording() {
-        // Stop VAD processing
-        mVADManager?.stopVAD()
-        
-        mRecorder!!.stop()
-        
-        Log.d(TAG, "Recording stopped, VAD processing ended")
-    }
-
-    // Transcription calls
-    private fun startTranscription(waveFilePath: String) {
-        mWhisper!!.setFilePath(waveFilePath)
-        mWhisper!!.setAction(Whisper.ACTION_TRANSCRIBE)
-        mWhisper!!.start()
-    }
-    
-    private fun transcribeSpeechSegment(audioSamples: FloatArray) {
-        Thread {
-            try {
-                Log.d(TAG, "Starting transcription of speech segment with ${audioSamples.size} samples")
-                
-                if (audioSamples.isEmpty()) {
-                    Log.w(TAG, "Received empty audio samples for transcription")
-                    handler.post {
-                        composeViewModel.updateStatus("Recording - Listening... (empty segment skipped)")
-                    }
-                    return@Thread
-                }
-                
-                // Set transcription flag
-                isTranscribing = true
-                
-                // Quick audio quality check
-                val rms = kotlin.math.sqrt(audioSamples.fold(0f) { acc, s -> acc + s * s } / audioSamples.size)
-                
-                // Guard against silence segments  
-                if (rms < 0.015f) {
-                    Log.w(TAG, "Discarded silence segment (RMS: ${String.format("%.4f", rms)})")
-                    handler.post {
-                        composeViewModel.updateStatus("Recording - Listening... (silence segment skipped)")
-                    }
-                    return@Thread
-                }
-                
-                // Save segment for debugging and playback
-                val timestamp = System.currentTimeMillis()
-                val segmentFileName = "segment_${timestamp}.wav"
-                val segmentWaveFile = File(sdcardDataFolder, segmentFileName)
-                lastTranscribedSegmentFile = segmentWaveFile
-                
-                // Update status during processing
-                handler.post {
-                    composeViewModel.updateStatus("Recording - Transcribing speech segment...")
-                }
-                
-                Log.d(TAG, "Saving audio segment: ${segmentWaveFile.absolutePath}")
-                val audioBytes = floatArrayToByteArray(audioSamples)
-                WaveUtil.createWaveFile(segmentWaveFile.absolutePath, audioBytes, 16000, 1, 2)
-                
-                if (!segmentWaveFile.exists()) {
-                    Log.e(TAG, "Failed to save audio segment file")
-                    handler.post {
-                        composeViewModel.updateStatus("Recording - Listening... (transcription failed)")
-                    }
-                    return@Thread
-                }
-                
-                // Simple audio preprocessing
-                val trimmedSamples = trimTrailingSilence(audioSamples)
-                
-                // Try direct array transcription
-                Log.d(TAG, "Starting direct array transcription...")
-                val startTime = System.currentTimeMillis()
-                val directResult = mWhisper?.transcribeFromArray(trimmedSamples, "en") ?: ""
-                val directTimeTaken = System.currentTimeMillis() - startTime
-                
-                Log.d(TAG, "Direct transcription result (${directTimeTaken}ms): \"$directResult\"")
-                
-                // If direct transcription fails, try file-based transcription
-                if (directResult.isBlank() && segmentWaveFile.exists()) {
-                    Log.d(TAG, "Direct transcription empty, trying file-based transcription...")
-                    
-                    handler.post {
-                        // Use file-based transcription as fallback
-                        mWhisper?.setFilePath(segmentWaveFile.absolutePath)
-                        mWhisper?.setAction(Whisper.ACTION_TRANSCRIBE)
-                        mWhisper?.start()
-                        
-                        composeViewModel.updateStatus("Recording - Transcribing (file-based)...")
-                    }
-                    return@Thread // Let the file-based transcription handle the result
-                }
-                
-                // Update UI with direct transcription result
-                handler.post {
-                    if (!directResult.isBlank()) {
-                        Log.d(TAG, "Updating UI with transcription: \"$directResult\"")
-                        composeViewModel.updateTranscription(directResult)
-                        
-                        if (composeViewModel.appState.isRecording) {
-                            composeViewModel.updateStatus("Recording - Listening... (${directTimeTaken}ms: \"$directResult\")")
-                        } else {
-                            composeViewModel.updateStatus("Processing done in ${directTimeTaken}ms: \"$directResult\"")
-                        }
-                        
-                        // Feed prompt to LLM
-                        submitPromptToLLM(directResult)
-                        
-                        Log.i(TAG, "Direct transcription success (${directTimeTaken}ms): \"$directResult\"")
-                    } else {
-                        Log.w(TAG, "Both transcription methods returned empty")
-                        if (composeViewModel.appState.isRecording) {
-                            composeViewModel.updateStatus("Recording - Listening... (no speech detected)")
-                        } else {
-                            composeViewModel.updateStatus("Processing done - no speech detected")
-                        }
-                    }
-                }
-                
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in transcription", e)
-                handler.post {
-                    composeViewModel.updateStatus("Recording - Listening... (transcription error: ${e.message})")
-                }
-            } finally {
-                // Always reset transcription flag
-                isTranscribing = false
-                Log.d(TAG, "Transcription completed, flag reset")
-            }
-        }.start()
-    }
-    
-    // Audio preprocessing utilities
-    private fun trimTrailingSilence(audioSamples: FloatArray): FloatArray {
-        if (audioSamples.isEmpty()) return audioSamples
-        
-        val threshold = 0.01f // Silence threshold
-        var lastNonSilentIndex = audioSamples.size - 1
-        
-        // Find the last non-silent sample
-        for (i in audioSamples.size - 1 downTo 0) {
-            if (kotlin.math.abs(audioSamples[i]) > threshold) {
-                lastNonSilentIndex = i
-                break
-            }
-        }
-        
-        // Keep a small buffer after the last speech
-        val bufferSamples = minOf(1600, audioSamples.size - lastNonSilentIndex - 1) // 0.1 second buffer
-        val trimmedSize = minOf(lastNonSilentIndex + bufferSamples + 1, audioSamples.size)
-        
-        return audioSamples.copyOfRange(0, trimmedSize)
-    }
-    
-    private fun padToWindow(audioSamples: FloatArray): FloatArray {
-        if (audioSamples.isEmpty()) return audioSamples
-        
-        val windowSize = 512
-        val remainder = audioSamples.size % windowSize
-        
-        return if (remainder == 0) {
-            audioSamples
-        } else {
-            val paddedSize = audioSamples.size + (windowSize - remainder)
-            val paddedArray = FloatArray(paddedSize)
-            audioSamples.copyInto(paddedArray)
-            // Padding with zeros (silence)
-            paddedArray
-        }
-    }
-
-    private fun floatArrayToByteArray(floatArray: FloatArray): ByteArray {
-        val byteArray = ByteArray(floatArray.size * 2) // 16-bit samples (2 bytes per sample)
-        for (i in floatArray.indices) {
-            val sample = (floatArray[i] * 32767).toInt().coerceIn(-32768, 32767).toShort()
-            byteArray[i * 2] = (sample.toInt() and 0xFF).toByte()
-            byteArray[i * 2 + 1] = ((sample.toInt() shr 8) and 0xFF).toByte()
-        }
-        return byteArray
-    }
-
-    private fun stopTranscription() {
-        mWhisper!!.stop()
-    }
-
-    fun getFilesWithExtension(directory: File?, extension: String): ArrayList<File> {
-        val filteredFiles = ArrayList<File>()
-
-        // Check if the directory is accessible
-        if (directory != null && directory.exists()) {
-            val files = directory.listFiles()
-
-            // Filter files by the provided extension
-            if (files != null) {
-                for (file in files) {
-                    if (file.isFile && file.name.endsWith(extension)) {
-                        filteredFiles.add(file)
-                    }
-                }
-            }
-        }
-
-        return filteredFiles
-    }
 
 
-    
 
-
-    override fun onDataReceived(data: FloatArray?) {
-        data?.let { mVADManager?.processAudioChunk(it) }
-    }
-    
-    override fun onUpdateReceived(message: String?) {
-        Log.d(TAG, "Recorder update: $message")
-        
-        when (message) {
-            Recorder.MSG_RECORDING -> {
-                handler.post { 
-                    composeViewModel.updateStatus("Recording - Listening...")
-                    composeViewModel.updateRecordingState(true)
-                }
-            }
-            Recorder.MSG_RECORDING_DONE -> {
-                handler.post { 
-                    composeViewModel.updateStatus("Recording stopped")
-                    composeViewModel.updateRecordingState(false)
-                }
-            }
-            else -> {
-                handler.post { 
-                    composeViewModel.updateStatus(message ?: "Unknown status")
-                }
-            }
-        }
-    }
-
-    private fun showError(message: String) {
-        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
-        Log.e(TAG, "Error: $message")
-    }
-
-    internal class SharedResource {
-        // Synchronized method for Thread 1 to wait for a signal with a timeout
-        @Synchronized
-        fun waitForSignalWithTimeout(timeoutMillis: Long): Boolean {
-            val startTime = System.currentTimeMillis()
-
-            try {
-                (this as java.lang.Object).wait(timeoutMillis) // Wait for the given timeout
-            } catch (e: InterruptedException) {
-                Thread.currentThread().interrupt() // Restore interrupt status
-                return false // Thread interruption as timeout
-            }
-
-            val elapsedTime = System.currentTimeMillis() - startTime
-
-            // Check if wait returned due to notify or timeout
-            return elapsedTime < timeoutMillis
-        }
-
-        // Synchronized method for Thread 2 to send a signal
-        @Synchronized
-        fun sendSignal() {
-            (this as java.lang.Object).notify() // Notifies the waiting thread
-        }
-    }
-
-    private fun submitPromptToLLM(prompt: String) {
-        val llm = mLLMManager ?: return
-        lifecycleScope.launch {
-            val start = System.currentTimeMillis()
-            val response = llm.generateResponse(prompt) ?: ""
-            val duration = System.currentTimeMillis() - start
-            handler.post {
-                composeViewModel.appendLLMResponse(response, duration)
-            }
-        }
-    }
 
     companion object {
         private const val TAG = "MainActivity"
-
-        // whisper-tiny.tflite and whisper-base-nooptim.en.tflite works well
-        private const val DEFAULT_MODEL_TO_USE = "whisper-tiny.tflite"
-
-        // English only model ends with extension ".en.tflite"
-        private const val ENGLISH_ONLY_MODEL_EXTENSION = ".en.tflite"
-        private const val ENGLISH_ONLY_VOCAB_FILE = "filters_vocab_en.bin"
-        private const val MULTILINGUAL_VOCAB_FILE = "filters_vocab_multilingual.bin"
-        private val EXTENSIONS_TO_COPY = arrayOf("tflite", "bin", "wav", "pcm")
-
-        // Copy assets with specified extensions to destination folder
-        @JvmStatic
-        private fun copyAssetsToSdcard(
-            context: android.content.Context,
-            destFolder: File?,
-            extensions: Array<String>
-        ) {
-            val assetManager = context.assets
-
-            try {
-                // List all files in the assets folder once
-                val assetFiles = assetManager.list("") ?: return
-
-                for (assetFileName in assetFiles) {
-                    // Check if file matches any of the provided extensions
-                    for (extension in extensions) {
-                        if (assetFileName.endsWith(".$extension")) {
-                            val outFile = File(destFolder, assetFileName)
-
-                            // Skip if file already exists
-                            if (outFile.exists()) break
-
-                            assetManager.open(assetFileName).use { inputStream ->
-                                FileOutputStream(outFile).use { outputStream ->
-                                    val buffer = ByteArray(1024)
-                                    var bytesRead: Int
-                                    while ((inputStream.read(buffer)
-                                            .also { bytesRead = it }) != -1
-                                    ) {
-                                        outputStream.write(buffer, 0, bytesRead)
-                                    }
-                                }
-                            }
-                            break // No need to check further extensions
-                        }
-                    }
-                }
-            } catch (e: IOException) {
-                e.printStackTrace()
-            }
-        }
+        private const val PERMISSION_REQUEST_CODE = 1001
     }
 }

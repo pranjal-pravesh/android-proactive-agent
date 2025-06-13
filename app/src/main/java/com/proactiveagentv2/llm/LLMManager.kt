@@ -176,7 +176,7 @@ class LLMManager(private val context: Context) {
     
     suspend fun generateResponse(prompt: String): String? = withContext(Dispatchers.IO) {
         if (!isInitialized || llmInference == null) {
-            Log.e(TAG, "LLM not initialized")
+            Log.w(TAG, "LLM not initialized, cannot generate response")
             return@withContext null
         }
         
@@ -187,6 +187,16 @@ class LLMManager(private val context: Context) {
             result
         } catch (e: Exception) {
             Log.e(TAG, "Error generating response", e)
+            // Don't propagate the exception to prevent crashes
+            try {
+                // Try to reset the LLM instance if it's corrupted
+                llmInference?.close()
+                llmInference = null
+                isInitialized = false
+                Log.w(TAG, "LLM instance reset due to error")
+            } catch (resetException: Exception) {
+                Log.e(TAG, "Error resetting LLM instance", resetException)
+            }
             null
         }
     }

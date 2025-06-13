@@ -2,8 +2,8 @@ package com.proactiveagentv2.asr
 
 import android.content.Context
 import android.util.Log
-import com.proactiveagentv2.engine.WhisperEngine
-import com.proactiveagentv2.engine.WhisperEngineNative
+import com.proactiveagentv2.sttengine.WhisperEngine
+import com.proactiveagentv2.sttengine.WhisperEngineNative
 import java.io.File
 import java.io.IOException
 import java.util.LinkedList
