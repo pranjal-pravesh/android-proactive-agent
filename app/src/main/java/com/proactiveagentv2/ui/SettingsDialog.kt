@@ -29,7 +29,8 @@ data class SettingsState(
     val silenceThreshold: Float = 0.3f,
     val minSpeechDurationMs: Long = 300L,
     val maxSilenceDurationMs: Long = 800L,
-    val selectedModelFile: File? = null
+    val selectedModelFile: File? = null,
+    val maxRecordingDurationMinutes: Int = 30, // 0 means never stop
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -179,6 +180,76 @@ fun SettingsDialog(
                         onValueChange = { 
                             localSettings = localSettings.copy(maxSilenceDurationMs = (it * 100).toLong())
                         }
+                    )
+
+                    Divider()
+
+                    // Recording Settings Section
+                    Text(
+                        text = "Recording Settings",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    // Recording Duration Setting
+                    var recordingDurationExpanded by remember { mutableStateOf(false) }
+                    val recordingDurationOptions = listOf(
+                        0 to "Never stop",
+                        1 to "1 minute",
+                        5 to "5 minutes", 
+                        10 to "10 minutes",
+                        15 to "15 minutes",
+                        30 to "30 minutes",
+                        60 to "1 hour",
+                        120 to "2 hours"
+                    )
+                    
+                    ExposedDropdownMenuBox(
+                        expanded = recordingDurationExpanded,
+                        onExpandedChange = { recordingDurationExpanded = !recordingDurationExpanded }
+                    ) {
+                        OutlinedTextField(
+                            value = recordingDurationOptions.find { it.first == localSettings.maxRecordingDurationMinutes }?.second ?: "Custom",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Maximum Recording Duration") },
+                            trailingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.KeyboardArrowDown,
+                                    contentDescription = "Dropdown"
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor()
+                        )
+                        
+                        ExposedDropdownMenu(
+                            expanded = recordingDurationExpanded,
+                            onDismissRequest = { recordingDurationExpanded = false }
+                        ) {
+                            recordingDurationOptions.forEach { (minutes, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = {
+                                        localSettings = localSettings.copy(maxRecordingDurationMinutes = minutes)
+                                        recordingDurationExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    // Add explanation text for the recording duration setting
+                    Text(
+                        text = when (localSettings.maxRecordingDurationMinutes) {
+                            0 -> "Recording will continue until manually stopped"
+                            else -> "Recording will automatically stop after ${localSettings.maxRecordingDurationMinutes} minute${if (localSettings.maxRecordingDurationMinutes == 1) "" else "s"}"
+                        },
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
                     )
 
                     // Add some bottom padding to ensure content doesn't hide behind buttons

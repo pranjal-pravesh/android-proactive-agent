@@ -39,6 +39,9 @@ class Recorder(private val mContext: Context) {
 
     @Volatile
     private var shouldStartRecording = false
+    
+    // Configurable recording duration (0 means never stop)
+    private var maxRecordingDurationMinutes = 30
 
     private val workerThread: Thread
 
@@ -54,6 +57,11 @@ class Recorder(private val mContext: Context) {
 
     fun setFilePath(wavFile: String?) {
         this.mWavFilePath = wavFile
+    }
+
+    fun setMaxRecordingDuration(durationMinutes: Int) {
+        this.maxRecordingDurationMinutes = durationMinutes
+        Log.d(TAG, "Recording duration set to: ${if (durationMinutes == 0) "Never stop" else "$durationMinutes minutes"}")
     }
 
     fun start() {
@@ -148,10 +156,20 @@ class Recorder(private val mContext: Context) {
 
         // Calculate byte counts for different durations
         val bytesForOneSecond = sampleRateInHz * bytesPerSample * channels
-        val bytesForSixtySeconds = bytesForOneSecond * RECORDING_DURATION
         
-        // PYTHON-LIKE STREAMING: Send smaller chunks more frequently for real-time VAD processing
-        // Instead of waiting for 3 seconds, send 0.5 second chunks (like Python's callback approach)
+        // Use configurable recording duration (0 means never stop)
+        val effectiveDurationSeconds = if (maxRecordingDurationMinutes == 0) {
+            Int.MAX_VALUE // Never stop - use maximum possible value
+        } else {
+            maxRecordingDurationMinutes * 60 // Convert minutes to seconds
+        }
+        val bytesForMaxDuration = if (effectiveDurationSeconds == Int.MAX_VALUE) {
+            Long.MAX_VALUE // Never stop
+        } else {
+            bytesForOneSecond.toLong() * effectiveDurationSeconds
+        }
+        
+        // Real-time streaming for VAD processing
         val streamingChunkSizeMs = 500 // 500ms chunks for real-time processing
         val bytesForStreamingChunk = (bytesForOneSecond * streamingChunkSizeMs) / 1000
 
@@ -159,11 +177,12 @@ class Recorder(private val mContext: Context) {
         val streamingBuffer = ByteArrayOutputStream() // Buffer for real-time streaming to VAD
 
         val audioData = ByteArray(bufferSize)
-        var totalBytesRead = 0
+        var totalBytesRead = 0L
         
-        Log.d(TAG, "Starting real-time audio streaming with ${streamingChunkSizeMs}ms chunks")
+        val durationText = if (maxRecordingDurationMinutes == 0) "never stop" else "${maxRecordingDurationMinutes} minutes"
+        Log.d(TAG, "Starting continuous recording with VAD processing (duration: $durationText)")
 
-        while (mInProgress.get() && totalBytesRead < bytesForSixtySeconds) {
+        while (mInProgress.get() && totalBytesRead < bytesForMaxDuration) {
             val bytesRead = audioRecord.read(audioData, 0, bufferSize)
             if (bytesRead > 0) {
                 // Save to complete recording buffer
@@ -172,22 +191,28 @@ class Recorder(private val mContext: Context) {
                 streamingBuffer.write(audioData, 0, bytesRead)
                 totalBytesRead += bytesRead
 
-                // PYTHON-LIKE BEHAVIOR: Send audio chunks frequently for real-time VAD processing
-                // This mimics Python's continuous callback approach
+                // Send audio chunks frequently for real-time VAD processing
                 if (streamingBuffer.size() >= bytesForStreamingChunk) {
                     val samples = convertToFloatArray(ByteBuffer.wrap(streamingBuffer.toByteArray()))
                     streamingBuffer.reset() // Clear the streaming buffer
                     sendData(samples) // Send for real-time VAD processing
                     
-                    // Log streaming info (can be removed in production)
-                    if (totalBytesRead % bytesForOneSecond < bufferSize) {
-                        Log.v(TAG, "Streaming: sent ${samples.size} samples (${samples.size / sampleRateInHz.toFloat()}s)")
+                    // Occasional logging (every 60 seconds)
+                    if (totalBytesRead % (bytesForOneSecond * 60) < bufferSize) {
+                        val recordingMinutes = totalBytesRead / bytesForOneSecond / 60
+                        Log.d(TAG, "Recording: ${recordingMinutes} minutes completed")
                     }
                 }
             } else {
                 Log.d(TAG, "AudioRecord error, bytes read: $bytesRead")
                 break
             }
+        }
+
+        // Check if we hit the duration limit (not applicable for "never stop")
+        if (maxRecordingDurationMinutes > 0 && totalBytesRead >= bytesForMaxDuration) {
+            Log.w(TAG, "Recording stopped due to duration limit (${maxRecordingDurationMinutes} minutes)")
+            sendUpdate("Recording stopped - duration limit reached")
         }
 
         // Send any remaining audio data in the streaming buffer
@@ -215,7 +240,8 @@ class Recorder(private val mContext: Context) {
             (fileSavedLock as java.lang.Object).notify()
         }
         
-        Log.d(TAG, "Recording completed. Total samples: ${totalBytesRead / bytesPerSample}")
+        val recordingDurationSeconds = totalBytesRead / bytesForOneSecond
+        Log.d(TAG, "Recording completed. Duration: ${recordingDurationSeconds} seconds, Total samples: ${totalBytesRead / bytesPerSample}")
     }
 
     private fun convertToFloatArray(buffer: ByteBuffer): FloatArray {
@@ -262,6 +288,6 @@ class Recorder(private val mContext: Context) {
         const val ACTION_RECORD: String = "Record"
         const val MSG_RECORDING: String = "Recording..."
         const val MSG_RECORDING_DONE: String = "Recording done...!"
-        const val RECORDING_DURATION: Int = 60 //60 seconds
+        const val MAX_RECORDING_DURATION: Int = 30 * 60 // 30 minutes
     }
 }

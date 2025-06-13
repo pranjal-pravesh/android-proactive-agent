@@ -62,6 +62,9 @@ class MainActivity : ComponentActivity(), RecorderListener {
     // For debugging and playback of last transcribed segment
     private var lastTranscribedSegmentFile: File? = null
     
+    // Recording duration setting (0 means never stop)
+    private var maxRecordingDurationMinutes = 30
+
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -99,7 +102,8 @@ class MainActivity : ComponentActivity(), RecorderListener {
                                 silenceThreshold = vadMgr.silenceThreshold,
                                 minSpeechDurationMs = vadMgr.minSpeechDurationMs,
                                 maxSilenceDurationMs = vadMgr.maxSilenceDurationMs,
-                                selectedModelFile = selectedTfliteFile
+                                selectedModelFile = selectedTfliteFile,
+                                maxRecordingDurationMinutes = maxRecordingDurationMinutes
                             ),
                             availableModels = composeViewModel.appState.modelFiles,
                             llmManager = mLLMManager,
@@ -110,6 +114,9 @@ class MainActivity : ComponentActivity(), RecorderListener {
                                 vadMgr.silenceThreshold = newSettings.silenceThreshold
                                 vadMgr.minSpeechDurationMs = newSettings.minSpeechDurationMs
                                 vadMgr.maxSilenceDurationMs = newSettings.maxSilenceDurationMs
+                                
+                                // Update recording duration setting
+                                maxRecordingDurationMinutes = newSettings.maxRecordingDurationMinutes
                                 
                                 // Update model if changed
                                 if (newSettings.selectedModelFile != selectedTfliteFile) {
@@ -411,6 +418,9 @@ class MainActivity : ComponentActivity(), RecorderListener {
 
         val waveFile = File(sdcardDataFolder, WaveUtil.RECORDING_FILE)
         mRecorder!!.setFilePath(waveFile.absolutePath)
+        
+        // Configure recording duration
+        mRecorder!!.setMaxRecordingDuration(maxRecordingDurationMinutes)
         
         // Start VAD processing
         mVADManager?.startVAD()
