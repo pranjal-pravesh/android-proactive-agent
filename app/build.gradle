@@ -102,6 +102,9 @@ dependencies {
     // Main TensorFlow Lite library
     implementation 'org.tensorflow:tensorflow-lite:2.14.0'
     implementation 'org.tensorflow:tensorflow-lite-support:0.4.4'
+    
+    // JSON parsing for custom tokenizer
+    implementation 'org.json:json:20230227'
 
     // ONNX Runtime for Silero VAD
     implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.18.0'

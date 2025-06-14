@@ -36,6 +36,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var transcriptionManager: TranscriptionManager
     private lateinit var settingsManager: SettingsManager
     private lateinit var uiCoordinator: UICoordinator
+    private lateinit var classifierManager: ClassifierManager
     
     private val handler = Handler(Looper.getMainLooper())
 
@@ -66,6 +67,7 @@ class MainActivity : ComponentActivity() {
         transcriptionManager = TranscriptionManager(this, composeViewModel, lifecycleScope)
         settingsManager = SettingsManager(this, composeViewModel)
         uiCoordinator = UICoordinator(this, composeViewModel)
+        classifierManager = ClassifierManager(this, composeViewModel, lifecycleScope)
         
         Log.d(TAG, "Manager instances created")
     }
@@ -96,8 +98,18 @@ class MainActivity : ComponentActivity() {
         transcriptionManager.initialize(
             whisper = appInitializer.whisper!!,
             dataFolder = getExternalFilesDir(null)!!,
-            llmManager = appInitializer.llmManager
+            llmManager = appInitializer.llmManager,
+            classifierManager = classifierManager
         )
+        
+        // Initialize classifier manager
+        val classifierInitialized = classifierManager.initialize()
+        if (classifierInitialized) {
+            Log.d(TAG, "ClassifierManager initialized successfully")
+            // Note: ClassifierManager is managed separately from AppInitializer
+        } else {
+            Log.w(TAG, "ClassifierManager initialization failed")
+        }
         
         // Initialize settings manager
         settingsManager.initialize(
@@ -164,9 +176,14 @@ class MainActivity : ComponentActivity() {
 
         appInitializer.vadManager?.setOnVADStatusListener { isSpeech, probability ->
             handler.post {
+                // Check if VAD state actually changed before updating status text
+                val previousVadState = composeViewModel.appState.vadStatus.isActive
+                
+                // Always update VAD status (this only logs when state changes)
                 composeViewModel.updateVadStatus(isSpeech, probability)
                 
-                if (composeViewModel.appState.isRecording) {
+                // Only update status text when recording and VAD state actually changed
+                if (composeViewModel.appState.isRecording && previousVadState != isSpeech) {
                     val statusText = if (isSpeech) {
                         "Recording - Speaking... (${String.format("%.2f", probability)})"
                     } else {
@@ -254,6 +271,7 @@ class MainActivity : ComponentActivity() {
             settingsManager.release()
             transcriptionManager.release()
             audioSessionManager.release()
+            classifierManager.release()
             appInitializer.release()
             
             Log.d(TAG, "=== MainActivity cleanup completed ===")

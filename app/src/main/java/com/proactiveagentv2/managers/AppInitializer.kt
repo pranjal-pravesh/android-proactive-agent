@@ -33,6 +33,8 @@ class AppInitializer(
         private set
     var llmManager: LLMManager? = null
         private set
+    var classifierManager: ClassifierManager? = null
+        private set
     
     // Model management
     var selectedModelFile: File? = null
@@ -47,6 +49,7 @@ class AppInitializer(
             initializeAudioComponents()
             initializeVADSystem()
             initializeLLMSystem()
+            initializeClassifierSystem()
             
             Log.d(TAG, "=== Application initialization completed successfully ===")
             InitializationResult.Success
@@ -124,6 +127,19 @@ class AppInitializer(
         }
     }
     
+    private fun initializeClassifierSystem() {
+        Log.d(TAG, "Initializing MobileBERT classifier system...")
+        
+        try {
+            // We need to pass a coroutine scope, but AppInitializer doesn't have one
+            // The ClassifierManager will be initialized later in MainActivity with proper scope
+            Log.d(TAG, "ClassifierManager will be initialized in MainActivity with proper coroutine scope")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error preparing classifier system", e)
+            Log.w(TAG, "Classifier functionality will be disabled")
+        }
+    }
+    
     fun initializeSTTModel(modelFile: File): Boolean {
         return try {
             Log.d(TAG, "Initializing STT model: ${modelFile.name}")
@@ -160,6 +176,9 @@ class AppInitializer(
         
         llmManager?.release()
         llmManager = null
+        
+        classifierManager?.release()
+        classifierManager = null
         
         deinitializeSTTModel()
         

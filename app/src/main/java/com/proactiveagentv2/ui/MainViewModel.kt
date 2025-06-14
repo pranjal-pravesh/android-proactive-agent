@@ -9,12 +9,22 @@ data class VadStatus(
     val probability: Float = 0f
 )
 
+data class ClassificationStatus(
+    val isActionable: Boolean = false,
+    val actionableConfidence: Float = 0f,
+    val isContextable: Boolean = false,
+    val contextableConfidence: Float = 0f,
+    val processingTimeMs: Long = 0L,
+    val lastClassifiedText: String = ""
+)
+
 data class AppState(
     val status: String = "Ready to transcribe",
     val transcriptionText: String = "",
     val isRecording: Boolean = false,
     val isPlaying: Boolean = false,
     val vadStatus: VadStatus = VadStatus(),
+    val classificationStatus: ClassificationStatus = ClassificationStatus(),
     val selectedModelFile: File? = null,
     val modelFiles: List<File> = emptyList()
 )
@@ -29,16 +39,13 @@ class MainViewModel : ViewModel() {
     }
 
     fun updateTranscription(text: String) {
-        android.util.Log.d("MainViewModel", "updateTranscription called with: \"$text\"")
-        android.util.Log.d("MainViewModel", "Current transcription: \"${appState.transcriptionText}\"")
+        android.util.Log.d("MainViewModel", "New transcription: \"$text\"")
         val newText = if (appState.transcriptionText.isEmpty()) {
             ">> $text"
         } else {
             ">> $text\n${appState.transcriptionText}"
         }
-        android.util.Log.d("MainViewModel", "New transcription will be: \"$newText\"")
         appState = appState.copy(transcriptionText = newText)
-        android.util.Log.d("MainViewModel", "After update, transcription is: \"${appState.transcriptionText}\"")
     }
 
     fun clearTranscription() {
@@ -57,7 +64,10 @@ class MainViewModel : ViewModel() {
     }
 
     fun updateVadStatus(isActive: Boolean, probability: Float) {
-        android.util.Log.d("MainViewModel", "Updating VAD status: active=$isActive, prob=$probability")
+        // Only log significant VAD changes to reduce log spam
+        if (isActive != appState.vadStatus.isActive) {
+            android.util.Log.d("MainViewModel", "VAD status changed: active=$isActive, prob=$probability")
+        }
         appState = appState.copy(vadStatus = VadStatus(isActive, probability))
     }
 
@@ -79,5 +89,20 @@ class MainViewModel : ViewModel() {
             "$formatted\n${appState.transcriptionText}"
         }
         appState = appState.copy(transcriptionText = newText, status = "LLM responded in ${durationMs}ms")
+    }
+    
+    fun updateClassificationResults(results: com.proactiveagentv2.managers.ClassifierManager.ClassificationResults) {
+        android.util.Log.d("MainViewModel", "Updating classification results - Actionable: ${results.isActionable}, Contextable: ${results.isContextable}")
+        
+        val classificationStatus = ClassificationStatus(
+            isActionable = results.isActionable,
+            actionableConfidence = results.actionableResult?.confidence ?: 0f,
+            isContextable = results.isContextable,
+            contextableConfidence = results.contextableResult?.confidence ?: 0f,
+            processingTimeMs = results.totalProcessingTimeMs,
+            lastClassifiedText = results.actionableResult?.let { "Last classified" } ?: ""
+        )
+        
+        appState = appState.copy(classificationStatus = classificationStatus)
     }
 } 

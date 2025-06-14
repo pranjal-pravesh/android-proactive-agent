@@ -3,6 +3,8 @@ package com.proactiveagentv2.ui
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -54,6 +56,9 @@ fun MainScreen(
         
         // Status Card
         StatusCard(status = appState.status)
+        
+        // Classification Status Card
+        ClassificationStatusCard(classificationStatus = appState.classificationStatus)
         
         // Transcription Results Card
         TranscriptionCard(
@@ -109,10 +114,6 @@ private fun HeaderSection() {
         }
     }
 }
-
-
-
-
 
 @Composable
 private fun ControlPanelCard(
@@ -318,79 +319,166 @@ private fun StatusCard(status: String) {
 }
 
 @Composable
-private fun TranscriptionCard(
-    transcriptionText: String,
-    modifier: Modifier = Modifier
-) {
-    // Debug logging
-    android.util.Log.d("TranscriptionCard", "Rendering with text: \"$transcriptionText\"")
-    android.util.Log.d("TranscriptionCard", "Text is empty: ${transcriptionText.isEmpty()}")
+private fun ClassificationStatusCard(classificationStatus: ClassificationStatus) {
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
     ) {
         Column(
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Header
             Row(
-                modifier = Modifier.padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = Icons.Default.TextSnippet,
+                    imageVector = Icons.Default.Psychology,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.secondary,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    text = "Transcription Results",
-                    style = MaterialTheme.typography.titleMedium,
+                    text = "AI Classification",
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.secondary,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.Medium
+                )
+                
+                if (classificationStatus.processingTimeMs > 0) {
+                    Spacer(modifier = Modifier.weight(1f))
+                    Text(
+                        text = "${classificationStatus.processingTimeMs}ms",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Actionable Classification
+                ClassificationChip(
+                    label = "Actionable",
+                    isPositive = classificationStatus.isActionable,
+                    confidence = classificationStatus.actionableConfidence,
+                    modifier = Modifier.weight(1f)
+                )
+                
+                // Contextable Classification
+                ClassificationChip(
+                    label = "Contextable",
+                    isPositive = classificationStatus.isContextable,
+                    confidence = classificationStatus.contextableConfidence,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ClassificationChip(
+    label: String,
+    isPositive: Boolean,
+    confidence: Float,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(
+            containerColor = if (isPositive) AccentGreen.copy(alpha = 0.1f) 
+                            else MaterialTheme.colorScheme.surfaceVariant
+        ),
+        border = CardDefaults.outlinedCardBorder(enabled = true).copy(
+            brush = androidx.compose.ui.graphics.SolidColor(
+                if (isPositive) AccentGreen else MaterialTheme.colorScheme.outline
+            )
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = if (isPositive) Icons.Default.CheckCircle else Icons.Default.Cancel,
+                    contentDescription = null,
+                    tint = if (isPositive) AccentGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Medium
                 )
             }
             
-            Divider(color = MaterialTheme.colorScheme.outline)
+            if (confidence > 0f) {
+                Text(
+                    text = "${(confidence * 100).toInt()}%",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isPositive) AccentGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun TranscriptionCard(
+    transcriptionText: String,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(300.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+        ) {
+            Text(
+                text = "Transcription",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
             
-            // Content
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp)
+                modifier = Modifier.fillMaxSize()
             ) {
                 if (transcriptionText.isEmpty()) {
                     Text(
-                        text = "Speak something to see the transcription appear here...",
+                        text = "Transcription will appear here...",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.align(Alignment.Center)
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(8.dp),
+                        textAlign = TextAlign.Center
                     )
                 } else {
-                    Card(
-                        modifier = Modifier.fillMaxSize(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    ) {
-                        Text(
-                            text = transcriptionText,
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(16.dp)
-                                .verticalScroll(rememberScrollState()),
-                            lineHeight = 28.sp
-                        )
-                    }
+                    Text(
+                        text = transcriptionText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(8.dp)
+                    )
                 }
             }
         }

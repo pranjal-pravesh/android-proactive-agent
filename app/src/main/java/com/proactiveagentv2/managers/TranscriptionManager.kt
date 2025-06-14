@@ -28,6 +28,7 @@ class TranscriptionManager(
     private var whisper: Whisper? = null
     private var sdcardDataFolder: File? = null
     private var llmManager: LLMManager? = null
+    private var classifierManager: ClassifierManager? = null
     private val handler = Handler(Looper.getMainLooper())
     
     // Transcription state
@@ -37,10 +38,11 @@ class TranscriptionManager(
     // Callbacks
     var onTranscriptionComplete: ((segmentFile: File) -> Unit)? = null
     
-    fun initialize(whisper: Whisper, dataFolder: File, llmManager: LLMManager? = null) {
+    fun initialize(whisper: Whisper, dataFolder: File, llmManager: LLMManager? = null, classifierManager: ClassifierManager? = null) {
         this.whisper = whisper
         this.sdcardDataFolder = dataFolder
         this.llmManager = llmManager
+        this.classifierManager = classifierManager
         
         setupWhisperListener()
         
@@ -71,8 +73,19 @@ class TranscriptionManager(
                         Log.d(TAG, "Transcription result: $result")
                         viewModel.updateTranscription(result)
                         
-                        // Submit to LLM if available
-                        submitToLLM(result)
+                        // Classify the transcription using both classifiers
+                        classifierManager?.classifyText(result)
+                        
+                        // Check if text is actionable before submitting to LLM
+                        val isActionable = classifierManager?.isTextActionable(result) ?: true // Default to true if classifier not available
+                        
+                        if (isActionable) {
+                            Log.d(TAG, "Text classified as actionable, submitting to LLM: \"$result\"")
+                            submitToLLM(result)
+                        } else {
+                            Log.d(TAG, "Text classified as non-actionable, skipping LLM: \"$result\"")
+                            viewModel.updateStatus("Transcription completed (non-actionable)")
+                        }
                     } else {
                         Log.w(TAG, "Empty transcription result received")
                     }
