@@ -219,7 +219,7 @@ class LLMManager(private val context: Context) {
             Log.d(TAG, "Generating enhanced response for: $userInput")
             
             // Build the initial prompt using ChatML format
-            val systemPrompt = if (useTools) promptBuilder.buildSystemPrompt() else buildBasicSystemPrompt()
+            val systemPrompt = if (useTools) promptBuilder.buildSystemPrompt() else promptBuilder.buildBasicSystemPrompt()
             val chatMLPrompt = promptBuilder.buildChatMLPrompt(
                 systemPrompt = systemPrompt,
                 userInput = userInput,
@@ -346,7 +346,7 @@ class LLMManager(private val context: Context) {
                 }
             } else {
                 // Simple streaming for non-tool responses using ChatML
-                val systemPrompt = buildBasicSystemPrompt()
+                val systemPrompt = promptBuilder.buildBasicSystemPrompt()
                 val chatMLPrompt = promptBuilder.buildChatMLPrompt(
                     systemPrompt = systemPrompt,
                     userInput = userInput,
@@ -418,28 +418,7 @@ class LLMManager(private val context: Context) {
      */
     fun getToolManager(): ToolManager = toolManager
     
-    /**
-     * Build basic system prompt without tools
-     */
-    private fun buildBasicSystemPrompt(): String {
-        return """
-You are a helpful and knowledgeable voice assistant.
-You can answer questions about a wide range of topics, including geography, science, history, mathematics, and general knowledge.
-Use prior context and conversation history only if it's relevant.
 
-Your responses should be brief, to the point, and easy to understand.
-Avoid unnecessary elaboration. If a short answer is sufficient, prefer it.
-Only provide longer explanations when the topic genuinely requires it.
-
-Guidelines:
-- Provide accurate, helpful answers to user questions
-- Avoid showing your reasoning steps or internal thoughts
-- Be friendly and informative, but stay concise
-- Answer independently — don't rely on earlier questions unless context is explicitly provided
-- If you truly don't know something, say so clearly
-- Never refuse to answer reasonable questions
-        """.trimIndent()
-    }
     
     /**
      * Handle LLM errors consistently

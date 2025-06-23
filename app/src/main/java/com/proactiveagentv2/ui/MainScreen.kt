@@ -544,11 +544,11 @@ fun ConversationCard(
                     val listState = rememberLazyListState()
                     
                     // Auto-scroll to latest message when messages change
-                    LaunchedEffect(messages.size) {
+                    LaunchedEffect(conversationText) {
                         if (messages.isNotEmpty()) {
-                            // Small delay to let the UI update, then scroll to newest message
+                            // Small delay to let the UI update, then scroll to the top (newest message)
                             kotlinx.coroutines.delay(100)
-                            listState.animateScrollToItem(index = 0)
+                            listState.scrollToItem(index = 0)
                         }
                     }
                     
@@ -558,9 +558,10 @@ fun ConversationCard(
                             .fillMaxSize()
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
-                        reverseLayout = true // Show newest messages at bottom
+                        reverseLayout = false // Normal layout
                     ) {
-                        items(messages.reversed()) { message ->
+                        // Show messages in chronological order, newest first
+                        items(messages) { message ->
                             ConversationMessage(message = message)
                         }
                     }

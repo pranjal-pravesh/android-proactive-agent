@@ -18,15 +18,27 @@ class PromptBuilder {
         
         private val CORE_SYSTEM_PROMPT = """
 You are a helpful voice assistant. Answer questions briefly and accurately.
+Use prior context and conversation history only if it's relevant.
+
+Your responses should be short, to the point, and easy to understand.
+Only provide longer explanations when the topic genuinely requires it.
+
+***If a tool is required to answer accurately, call it as instructed.***
         """.trimIndent()
         
         private val TOOL_CALL_PROMPT = """
-Tools available:
-- CALCULATOR: TOOL_CALL:CALCULATOR:{expression}
-- WEATHER: TOOL_CALL:WEATHER:{location}  
-- CALENDAR: TOOL_CALL:CALENDAR:{action}:{details}
+You have access to the following tools:
 
-Use tools only when needed. Format responses naturally.
+- **CALCULATOR**: Use for math problems.  
+  Format: `TOOL_CALL:CALCULATOR:{expression}`
+
+- **WEATHER**: Use to provide weather info for a specific location.  
+  Format: `TOOL_CALL:WEATHER:{location}`
+
+- **CALENDAR**: Use to check, add, or update events.  
+  Format: `TOOL_CALL:CALENDAR:{action}:{details}`
+
+Only call a tool if it is truly required to answer correctly. Otherwise, respond naturally.
         """.trimIndent()
     }
     
@@ -35,8 +47,16 @@ Use tools only when needed. Format responses naturally.
      */
     fun buildSystemPrompt(): String {
         val fullPrompt = CORE_SYSTEM_PROMPT + "\n" + TOOL_CALL_PROMPT
-        Log.d(TAG, "Built concise system prompt: ${fullPrompt.length} characters (optimized for fast prefill)")
+        Log.d(TAG, "Built system prompt with tools: ${fullPrompt.length} characters")
         return fullPrompt
+    }
+    
+    /**
+     * Builds just the basic system prompt without tool capabilities
+     */
+    fun buildBasicSystemPrompt(): String {
+        Log.d(TAG, "Built basic system prompt: ${CORE_SYSTEM_PROMPT.length} characters")
+        return CORE_SYSTEM_PROMPT
     }
     
     /**
