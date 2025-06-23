@@ -39,8 +39,9 @@ fun MainScreen(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .verticalScroll(rememberScrollState())
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // Header Section
         HeaderSection()
@@ -63,17 +64,29 @@ fun MainScreen(
             )
         }
         
-        // Status Card
-        StatusCard(status = appState.status)
+        // Status and Classification Row (side by side to save space)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            StatusCard(
+                status = appState.status,
+                modifier = Modifier.weight(1f)
+            )
+            ClassificationStatusCard(
+                classificationStatus = appState.classificationStatus,
+                modifier = Modifier.weight(1f)
+            )
+        }
         
-        // Classification Status Card
-        ClassificationStatusCard(classificationStatus = appState.classificationStatus)
-        
-        // Transcription Results Card
-        TranscriptionCard(
-            transcriptionText = appState.transcriptionText,
-            modifier = Modifier.weight(1f)
+        // Conversation Card (replaces transcription card)
+        ConversationCard(
+            conversationText = appState.transcriptionText,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 300.dp, max = 600.dp)
         )
+        
+        // Add some bottom padding for scrolling
+        Spacer(modifier = Modifier.height(80.dp))
     }
     
     // Settings FAB
@@ -291,54 +304,63 @@ private fun VadIndicator(
 }
 
 @Composable
-private fun StatusCard(status: String) {
+private fun StatusCard(
+    status: String,
+    modifier: Modifier = Modifier
+) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.Info,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            Column {
-                Text(
-                    text = "Status",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.secondary,
-                    fontWeight = FontWeight.Medium
-                )
-                Text(
-                    text = status,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ClassificationStatusCard(classificationStatus: ClassificationStatus) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Status",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            Text(
+                text = status,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2
+            )
+        }
+    }
+}
+
+@Composable
+private fun ClassificationStatusCard(
+    classificationStatus: ClassificationStatus,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically
@@ -347,11 +369,11 @@ private fun ClassificationStatusCard(classificationStatus: ClassificationStatus)
                     imageVector = Icons.Default.Psychology,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(16.dp)
                 )
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "AI Classification",
+                    text = "Classification",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.secondary,
                     fontWeight = FontWeight.Medium
@@ -369,11 +391,11 @@ private fun ClassificationStatusCard(classificationStatus: ClassificationStatus)
             
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 // Actionable Classification
                 ClassificationChip(
-                    label = "Actionable",
+                    label = "A",
                     isPositive = classificationStatus.isActionable,
                     confidence = classificationStatus.actionableConfidence,
                     modifier = Modifier.weight(1f)
@@ -381,7 +403,7 @@ private fun ClassificationStatusCard(classificationStatus: ClassificationStatus)
                 
                 // Contextable Classification
                 ClassificationChip(
-                    label = "Contextable",
+                    label = "C",
                     isPositive = classificationStatus.isContextable,
                     confidence = classificationStatus.contextableConfidence,
                     modifier = Modifier.weight(1f)
@@ -410,33 +432,32 @@ private fun ClassificationChip(
             )
         )
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+        Row(
+            modifier = Modifier.padding(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = if (isPositive) Icons.Default.CheckCircle else Icons.Default.Cancel,
-                    contentDescription = null,
-                    tint = if (isPositive) AccentGreen else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-            
+            Icon(
+                imageVector = if (isPositive) Icons.Default.CheckCircle else Icons.Default.Cancel,
+                contentDescription = null,
+                tint = if (isPositive) AccentGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(10.dp)
+            )
+            Spacer(modifier = Modifier.width(3.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Medium,
+                fontSize = 10.sp
+            )
             if (confidence > 0f) {
+                Spacer(modifier = Modifier.width(2.dp))
                 Text(
                     text = "${(confidence * 100).toInt()}%",
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (isPositive) AccentGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (isPositive) AccentGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 9.sp
                 )
             }
         }
@@ -444,54 +465,229 @@ private fun ClassificationChip(
 }
 
 @Composable
-fun TranscriptionCard(
-    transcriptionText: String,
+fun ConversationCard(
+    conversationText: String,
     modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(300.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp)
+                .padding(20.dp)
         ) {
-            Text(
-                text = "Transcription",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            
-            Box(
-                modifier = Modifier.fillMaxSize()
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(bottom = 16.dp)
             ) {
-                if (transcriptionText.isEmpty()) {
-                    Text(
-                        text = "Transcription will appear here...",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .padding(8.dp),
-                        textAlign = TextAlign.Center
-                    )
-                } else {
-                    Text(
-                        text = transcriptionText,
-                        style = MaterialTheme.typography.bodyMedium,
+                Icon(
+                    imageVector = Icons.Default.Chat,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "Conversation",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            
+            Card(
+                modifier = Modifier.fillMaxSize(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                if (conversationText.isEmpty()) {
+                    Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .verticalScroll(rememberScrollState())
-                            .padding(8.dp)
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.GraphicEq,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(32.dp)
+                            )
+                            Text(
+                                text = "Start a conversation",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "Use voice recording or text input",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        reverseLayout = true // Show newest messages at bottom
+                    ) {
+                        // Parse conversation into individual messages
+                        val messages = parseConversationMessages(conversationText)
+                        
+                        items(messages.reversed()) { message ->
+                            ConversationMessage(message = message)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+data class ConversationMessage(
+    val content: String,
+    val isUser: Boolean,
+    val timestamp: String = ""
+)
+
+@Composable
+private fun ConversationMessage(
+    message: ConversationMessage,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start
+    ) {
+        if (!message.isUser) {
+            // AI message - left aligned
+            Card(
+                modifier = Modifier.fillMaxWidth(0.85f),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                ),
+                shape = RoundedCornerShape(
+                    topStart = 4.dp,
+                    topEnd = 16.dp,
+                    bottomStart = 16.dp,
+                    bottomEnd = 16.dp
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Psychology,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "AI Assistant",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.secondary,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                    Text(
+                        text = message.content,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+            }
+        } else {
+            // User message - right aligned
+            Card(
+                modifier = Modifier.fillMaxWidth(0.85f),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primary
+                ),
+                shape = RoundedCornerShape(
+                    topStart = 16.dp,
+                    topEnd = 4.dp,
+                    bottomStart = 16.dp,
+                    bottomEnd = 16.dp
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "You",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                    Text(
+                        text = message.content,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimary
                     )
                 }
             }
         }
     }
+}
+
+private fun parseConversationMessages(conversationText: String): List<ConversationMessage> {
+    if (conversationText.isBlank()) return emptyList()
+    
+    val messages = mutableListOf<ConversationMessage>()
+    val lines = conversationText.split("\n")
+    
+    for (line in lines) {
+        when {
+            line.startsWith(">> ") -> {
+                // User input (transcription or text input)
+                val content = line.removePrefix(">> ").trim()
+                if (content.isNotBlank()) {
+                    messages.add(ConversationMessage(content, isUser = true))
+                }
+            }
+            line.startsWith("LLM >> ") -> {
+                // LLM response
+                val content = line.removePrefix("LLM >> ").trim()
+                if (content.isNotBlank() && content != "(no response)") {
+                    messages.add(ConversationMessage(content, isUser = false))
+                }
+            }
+        }
+    }
+    
+    return messages
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -511,8 +707,8 @@ private fun TextInputCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
     ) {
         Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically
@@ -521,14 +717,14 @@ private fun TextInputCard(
                     imageVector = Icons.Default.EditNote,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(16.dp)
                 )
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "Text Input",
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.secondary,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.Medium
                 )
             }
             
