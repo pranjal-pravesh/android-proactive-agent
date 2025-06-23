@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -539,16 +540,24 @@ fun ConversationCard(
                         }
                     }
                 } else {
+                    val messages = parseConversationMessages(conversationText)
+                    val listState = rememberLazyListState()
+                    
+                    // Auto-scroll to latest message when messages change
+                    LaunchedEffect(messages.size) {
+                        if (messages.isNotEmpty()) {
+                            listState.animateScrollToItem(0) // Scroll to top (newest message in reverse layout)
+                        }
+                    }
+                    
                     LazyColumn(
+                        state = listState,
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                         reverseLayout = true // Show newest messages at bottom
                     ) {
-                        // Parse conversation into individual messages
-                        val messages = parseConversationMessages(conversationText)
-                        
                         items(messages.reversed()) { message ->
                             ConversationMessage(message = message)
                         }
