@@ -196,6 +196,51 @@ class TranscriptionManager(
         return pcmData
     }
     
+    /**
+     * Process text input directly through the same pipeline as transcribed text
+     */
+    fun processTextInput(text: String) {
+        if (text.isBlank()) {
+            Log.w(TAG, "Empty text input provided")
+            return
+        }
+        
+        Log.d(TAG, "Processing text input: \"$text\"")
+        
+        // Update UI to show processing
+        handler.post {
+            viewModel.updateStatus("Processing text input...")
+            viewModel.updateTranscription(text)
+        }
+        
+        // Process through the same pipeline as transcribed text
+        coroutineScope.launch {
+            try {
+                withContext(Dispatchers.Main) {
+                    // Classify the text using both classifiers
+                    classifierManager?.classifyText(text)
+                    
+                    // Check if text is actionable before submitting to LLM
+                    val isActionable = classifierManager?.isTextActionable(text) ?: true // Default to true if classifier not available
+                    
+                    if (isActionable) {
+                        Log.d(TAG, "Text input classified as actionable, submitting to LLM: \"$text\"")
+                        submitToLLM(text)
+                        viewModel.updateStatus("Text processed and sent to LLM")
+                    } else {
+                        Log.d(TAG, "Text input classified as non-actionable, skipping LLM: \"$text\"")
+                        viewModel.updateStatus("Text processed (non-actionable)")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error processing text input", e)
+                withContext(Dispatchers.Main) {
+                    viewModel.updateStatus("Text processing error: ${e.message}")
+                }
+            }
+        }
+    }
+
     fun isCurrentlyTranscribing(): Boolean {
         synchronized(transcriptionSync) {
             return isTranscribing

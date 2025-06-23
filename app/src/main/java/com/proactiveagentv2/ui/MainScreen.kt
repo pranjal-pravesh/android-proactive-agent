@@ -32,6 +32,7 @@ fun MainScreen(
     onPlayClick: () -> Unit,
     onClearClick: () -> Unit,
     onSettingsClick: () -> Unit,
+    onTextSubmit: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -53,6 +54,14 @@ fun MainScreen(
             onPlayClick = onPlayClick,
             onClearClick = onClearClick
         )
+        
+        // Text Input Card
+        if (onTextSubmit != null) {
+            TextInputCard(
+                onTextSubmit = onTextSubmit,
+                isProcessing = appState.isRecording // Disable when recording
+            )
+        }
         
         // Status Card
         StatusCard(status = appState.status)
@@ -483,4 +492,105 @@ fun TranscriptionCard(
             }
         }
     }
-} 
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TextInputCard(
+    onTextSubmit: (String) -> Unit,
+    isProcessing: Boolean,
+    modifier: Modifier = Modifier
+) {
+    var textInput by remember { mutableStateOf("") }
+    
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.EditNote,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "Text Input",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            
+            // Text input field
+            OutlinedTextField(
+                value = textInput,
+                onValueChange = { textInput = it },
+                label = { Text("Type your message") },
+                placeholder = { Text("Enter text to process through AI pipeline...") },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isProcessing,
+                minLines = 2,
+                maxLines = 4,
+                trailingIcon = {
+                    if (textInput.isNotBlank()) {
+                        IconButton(
+                            onClick = { textInput = "" },
+                            enabled = !isProcessing
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Clear,
+                                contentDescription = "Clear text"
+                            )
+                        }
+                    }
+                }
+            )
+            
+            // Submit button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                Button(
+                    onClick = {
+                        if (textInput.isNotBlank()) {
+                            onTextSubmit(textInput.trim())
+                            textInput = "" // Clear input after submitting
+                        }
+                    },
+                    enabled = textInput.isNotBlank() && !isProcessing,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Send,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Process Text")
+                }
+            }
+            
+            // Help text
+            Text(
+                text = "This text will go through the same AI pipeline as voice transcriptions (classifiers + LLM)",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}

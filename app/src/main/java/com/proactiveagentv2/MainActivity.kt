@@ -209,7 +209,10 @@ class MainActivity : ComponentActivity() {
                         onRecordClick = { uiCoordinator.handleRecordButtonClick() },
                         onPlayClick = { uiCoordinator.handlePlayButtonClick() },
                         onClearClick = { uiCoordinator.handleClearButtonClick() },
-                        onSettingsClick = { uiCoordinator.handleSettingsButtonClick() }
+                        onSettingsClick = { uiCoordinator.handleSettingsButtonClick() },
+                        onTextSubmit = { text -> 
+                            transcriptionManager.processTextInput(text)
+                        }
                     )
                     
                     // Settings Dialog
