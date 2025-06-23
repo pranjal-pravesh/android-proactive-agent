@@ -18,6 +18,7 @@ class SettingsManager(
     private var vadManager: VADManager? = null
     private var appInitializer: AppInitializer? = null
     private var audioSessionManager: AudioSessionManager? = null
+    private var ttsManager: TTSManager? = null
     
     // Current settings state
     private var currentSettings = SettingsState()
@@ -25,11 +26,13 @@ class SettingsManager(
     fun initialize(
         vadManager: VADManager,
         appInitializer: AppInitializer,
-        audioSessionManager: AudioSessionManager
+        audioSessionManager: AudioSessionManager,
+        ttsManager: TTSManager
     ) {
         this.vadManager = vadManager
         this.appInitializer = appInitializer
         this.audioSessionManager = audioSessionManager
+        this.ttsManager = ttsManager
         
         // Load initial settings from components
         refreshCurrentSettings()
@@ -49,7 +52,10 @@ class SettingsManager(
             minSpeechDurationMs = vadManager?.minSpeechDurationMs ?: 500L,
             maxSilenceDurationMs = vadManager?.maxSilenceDurationMs ?: 1000L,
             selectedModelFile = appInitializer?.selectedModelFile,
-            maxRecordingDurationMinutes = getRecordingDurationFromState()
+            maxRecordingDurationMinutes = getRecordingDurationFromState(),
+            ttsEnabled = ttsManager?.isEnabled() ?: true,
+            ttsSpeechRate = ttsManager?.getSpeechRate() ?: DEFAULT_TTS_SPEECH_RATE,
+            ttsPitch = ttsManager?.getPitch() ?: DEFAULT_TTS_PITCH
         )
     }
     
@@ -63,6 +69,9 @@ class SettingsManager(
             
             // Apply model settings if changed
             val modelChanged = applyModelSettings(newSettings)
+            
+            // Apply TTS settings
+            applyTTSSettings(newSettings)
             
             // Update current settings
             currentSettings = newSettings.copy()
@@ -94,6 +103,15 @@ class SettingsManager(
     private fun applyRecordingDurationSettings(settings: SettingsState) {
         audioSessionManager?.updateRecordingDuration(settings.maxRecordingDurationMinutes)
         Log.d(TAG, "Recording duration setting applied: ${settings.maxRecordingDurationMinutes} minutes")
+    }
+    
+    private fun applyTTSSettings(settings: SettingsState) {
+        ttsManager?.updateSettings(
+            enabled = settings.ttsEnabled,
+            speechRate = settings.ttsSpeechRate,
+            pitch = settings.ttsPitch
+        )
+        Log.d(TAG, "TTS settings applied: enabled=${settings.ttsEnabled}, rate=${settings.ttsSpeechRate}, pitch=${settings.ttsPitch}")
     }
     
     private fun applyModelSettings(settings: SettingsState): Boolean {
@@ -146,7 +164,10 @@ class SettingsManager(
             minSpeechDurationMs = DEFAULT_MIN_SPEECH_DURATION_MS,
             maxSilenceDurationMs = DEFAULT_MAX_SILENCE_DURATION_MS,
             selectedModelFile = appInitializer?.selectedModelFile,
-            maxRecordingDurationMinutes = DEFAULT_RECORDING_DURATION_MINUTES
+            maxRecordingDurationMinutes = DEFAULT_RECORDING_DURATION_MINUTES,
+            ttsEnabled = DEFAULT_TTS_ENABLED,
+            ttsSpeechRate = DEFAULT_TTS_SPEECH_RATE,
+            ttsPitch = DEFAULT_TTS_PITCH
         )
         
         Log.d(TAG, "Settings reset to defaults")
@@ -192,6 +213,15 @@ class SettingsManager(
             errors.add("Selected model file does not exist")
         }
         
+        // Validate TTS settings
+        if (settings.ttsSpeechRate < 0.1f || settings.ttsSpeechRate > 4.0f) {
+            errors.add("TTS speech rate must be between 0.1x and 4.0x")
+        }
+        
+        if (settings.ttsPitch < 0.1f || settings.ttsPitch > 4.0f) {
+            errors.add("TTS pitch must be between 0.1x and 4.0x")
+        }
+        
         return if (errors.isEmpty()) {
             SettingsValidationResult.Valid
         } else {
@@ -203,6 +233,7 @@ class SettingsManager(
         vadManager = null
         appInitializer = null
         audioSessionManager = null
+        ttsManager = null
         Log.d(TAG, "SettingsManager released")
     }
     
@@ -225,5 +256,8 @@ class SettingsManager(
         const val DEFAULT_MIN_SPEECH_DURATION_MS = 500L
         const val DEFAULT_MAX_SILENCE_DURATION_MS = 1000L
         const val DEFAULT_RECORDING_DURATION_MINUTES = 30
+        const val DEFAULT_TTS_ENABLED = true
+        const val DEFAULT_TTS_SPEECH_RATE = 1.0f
+        const val DEFAULT_TTS_PITCH = 1.0f
     }
 } 

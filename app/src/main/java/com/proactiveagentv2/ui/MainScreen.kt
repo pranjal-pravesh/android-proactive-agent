@@ -546,7 +546,9 @@ fun ConversationCard(
                     // Auto-scroll to latest message when messages change
                     LaunchedEffect(messages.size) {
                         if (messages.isNotEmpty()) {
-                            listState.animateScrollToItem(0) // Scroll to top (newest message in reverse layout)
+                            // Small delay to let the UI update, then scroll to newest message
+                            kotlinx.coroutines.delay(100)
+                            listState.animateScrollToItem(index = 0)
                         }
                     }
                     

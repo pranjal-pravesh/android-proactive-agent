@@ -37,6 +37,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var settingsManager: SettingsManager
     private lateinit var uiCoordinator: UICoordinator
     private lateinit var classifierManager: ClassifierManager
+    private lateinit var ttsManager: TTSManager
     
     private val handler = Handler(Looper.getMainLooper())
 
@@ -68,6 +69,7 @@ class MainActivity : ComponentActivity() {
         settingsManager = SettingsManager(this, composeViewModel)
         uiCoordinator = UICoordinator(this, composeViewModel)
         classifierManager = ClassifierManager(this, composeViewModel, lifecycleScope)
+        ttsManager = TTSManager(this)
         
         Log.d(TAG, "Manager instances created")
     }
@@ -99,7 +101,8 @@ class MainActivity : ComponentActivity() {
             whisper = appInitializer.whisper!!,
             dataFolder = getExternalFilesDir(null)!!,
             llmManager = appInitializer.llmManager,
-            classifierManager = classifierManager
+            classifierManager = classifierManager,
+            ttsManager = ttsManager
         )
         
         // Initialize classifier manager
@@ -111,11 +114,20 @@ class MainActivity : ComponentActivity() {
             Log.w(TAG, "ClassifierManager initialization failed")
         }
         
+        // Initialize TTS manager
+        val ttsInitialized = ttsManager.initialize()
+        if (ttsInitialized) {
+            Log.d(TAG, "TTSManager initialized successfully")
+        } else {
+            Log.w(TAG, "TTSManager initialization failed")
+        }
+        
         // Initialize settings manager
         settingsManager.initialize(
             vadManager = appInitializer.vadManager!!,
             appInitializer = appInitializer,
-            audioSessionManager = audioSessionManager
+            audioSessionManager = audioSessionManager,
+            ttsManager = ttsManager
         )
         
         // Initialize UI coordinator
@@ -275,6 +287,7 @@ class MainActivity : ComponentActivity() {
             transcriptionManager.release()
             audioSessionManager.release()
             classifierManager.release()
+            ttsManager.release()
             appInitializer.release()
             
             Log.d(TAG, "=== MainActivity cleanup completed ===")

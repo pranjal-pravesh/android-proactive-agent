@@ -31,6 +31,9 @@ data class SettingsState(
     val maxSilenceDurationMs: Long = 800L,
     val selectedModelFile: File? = null,
     val maxRecordingDurationMinutes: Int = 30, // 0 means never stop
+    val ttsEnabled: Boolean = true,
+    val ttsSpeechRate: Float = 1.0f,
+    val ttsPitch: Float = 1.0f
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -251,6 +254,62 @@ fun SettingsDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp)
                     )
+
+                    Divider()
+
+                    // TTS Settings Section
+                    Text(
+                        text = "Text-to-Speech (TTS)",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    // TTS Enable/Disable
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Enable TTS",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "Read LLM responses aloud",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = localSettings.ttsEnabled,
+                            onCheckedChange = { localSettings = localSettings.copy(ttsEnabled = it) }
+                        )
+                    }
+
+                    // TTS Speech Rate (only show if TTS is enabled)
+                    if (localSettings.ttsEnabled) {
+                        SettingsSlider(
+                            label = "Speech Rate",
+                            value = localSettings.ttsSpeechRate,
+                            valueRange = 0.5f..2.0f,
+                            steps = 15,
+                            displayValue = "%.1fx".format(localSettings.ttsSpeechRate),
+                            onValueChange = { localSettings = localSettings.copy(ttsSpeechRate = it) }
+                        )
+
+                        // TTS Pitch
+                        SettingsSlider(
+                            label = "Pitch",
+                            value = localSettings.ttsPitch,
+                            valueRange = 0.5f..2.0f,
+                            steps = 15,
+                            displayValue = "%.1fx".format(localSettings.ttsPitch),
+                            onValueChange = { localSettings = localSettings.copy(ttsPitch = it) }
+                        )
+                    }
 
                     // Add some bottom padding to ensure content doesn't hide behind buttons
                     Spacer(modifier = Modifier.height(16.dp))

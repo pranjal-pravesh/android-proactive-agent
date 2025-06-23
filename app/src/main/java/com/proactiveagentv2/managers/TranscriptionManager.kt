@@ -29,6 +29,7 @@ class TranscriptionManager(
     private var sdcardDataFolder: File? = null
     private var llmManager: LLMManager? = null
     private var classifierManager: ClassifierManager? = null
+    private var ttsManager: TTSManager? = null
     private val handler = Handler(Looper.getMainLooper())
     
     // Transcription state
@@ -38,11 +39,12 @@ class TranscriptionManager(
     // Callbacks
     var onTranscriptionComplete: ((segmentFile: File) -> Unit)? = null
     
-    fun initialize(whisper: Whisper, dataFolder: File, llmManager: LLMManager? = null, classifierManager: ClassifierManager? = null) {
+    fun initialize(whisper: Whisper, dataFolder: File, llmManager: LLMManager? = null, classifierManager: ClassifierManager? = null, ttsManager: TTSManager? = null) {
         this.whisper = whisper
         this.sdcardDataFolder = dataFolder
         this.llmManager = llmManager
         this.classifierManager = classifierManager
+        this.ttsManager = ttsManager
         
         setupWhisperListener()
         
@@ -288,6 +290,9 @@ class TranscriptionManager(
                             viewModel.appendLLMResponse(llmResponse.finalText, duration)
                             Log.d(TAG, "Enhanced LLM response received (${duration}ms): \"${llmResponse.finalText}\"")
                             
+                            // Use TTS to read the response aloud
+                            ttsManager?.speak(llmResponse.finalText)
+                            
                             // Show tool results in logs for debugging
                             if (llmResponse.toolResults.isNotEmpty()) {
                                 llmResponse.toolResults.forEach { result ->
@@ -301,6 +306,7 @@ class TranscriptionManager(
                             val fallbackResponse = llm.generateResponse(transcriptionText) ?: ""
                             if (fallbackResponse.isNotBlank()) {
                                 viewModel.appendLLMResponse(fallbackResponse, duration)
+                                ttsManager?.speak(fallbackResponse)
                                 Log.d(TAG, "Fallback LLM response used: \"$fallbackResponse\"")
                             }
                         }
