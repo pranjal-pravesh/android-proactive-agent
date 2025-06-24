@@ -120,7 +120,7 @@ class LLMManager(private val context: Context) {
             name = "Qwen2.5-1.5B-Instruct q8",
             modelId = "litert-community/Qwen2.5-1.5B-Instruct",
             modelFile = "Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
-            description = "A variant of Qwen/Qwen2.5-1.5B-Instruct with 8-bit quantization ready for deployment on Android",
+            description = "A variant of Qwen/Qwen2.5-1.5B-Instruct with 8-bit quantization and GPU acceleration support",
             sizeInBytes = 1625493432, // ~1.6GB
             downloadUrl = "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
             defaultConfig = LLMConfig(
@@ -128,10 +128,12 @@ class LLMManager(private val context: Context) {
                 topP = 0.95f,
                 temperature = 1.0f,
                 maxTokens = 1024,
-                useGPU = false
+                useGPU = true, // Default to GPU since it's supported
+                useNNAPI = false,
+                numThreads = 4
             ),
             modelType = ModelType.QWEN,
-            supportsGPU = false,
+            supportsGPU = true, // Enable GPU support for Qwen
             isLocalOnly = false,
             requiresLiteRT = false
         )

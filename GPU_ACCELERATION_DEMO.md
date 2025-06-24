@@ -1,7 +1,7 @@
 # GPU Acceleration Implementation Demo
 
 ## Overview
-This project now implements GPU acceleration for the Gemma 3n E2B model using MediaPipe's proper delegate system, following the patterns from [Google AI Edge Gallery](https://github.com/google-ai-edge/gallery).
+This project now implements GPU acceleration for both the **Gemma 3n E2B** and **Qwen2.5-1.5B-Instruct** models using MediaPipe's proper delegate system, following the patterns from [Google AI Edge Gallery](https://github.com/google-ai-edge/gallery).
 
 ## What's Implemented
 
@@ -92,7 +92,7 @@ fun checkGPUCompatibility(): GPUCompatibilityInfo {
 
 ### 1. Enable GPU Acceleration
 - Open Settings → AI Language Models
-- Select the "Gemma 3n E2B" model tab
+- Select either the "Gemma 3n E2B" or "Qwen2.5-1.5B-Instruct" model tab
 - Toggle "GPU Acceleration" switch to ON
 - Initialize the model
 
