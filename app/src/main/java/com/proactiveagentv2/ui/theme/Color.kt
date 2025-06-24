@@ -32,4 +32,7 @@ val AccentRed = Color(0xFFFF5252)
 // Surface Colors
 val SurfaceContainer = Color(0xFF1E1E1E)
 val SurfaceContainerHigh = Color(0xFF242424)
-val SurfaceContainerHighest = Color(0xFF2A2A2A) 
+val SurfaceContainerHighest = Color(0xFF2A2A2A)
+
+// Tool Call Colors
+val ToolCallContainer = Color(0xFF1F2937) // Slightly blue-tinted dark background for tool responses 

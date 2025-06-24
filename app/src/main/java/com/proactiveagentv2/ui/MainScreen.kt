@@ -574,6 +574,7 @@ fun ConversationCard(
 data class ConversationMessage(
     val content: String,
     val isUser: Boolean,
+    val hasToolCalls: Boolean = false,
     val timestamp: String = ""
 )
 
@@ -591,7 +592,10 @@ private fun ConversationMessage(
             Card(
                 modifier = Modifier.fillMaxWidth(0.85f),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                    containerColor = if (message.hasToolCalls) 
+                        com.proactiveagentv2.ui.theme.ToolCallContainer 
+                    else 
+                        MaterialTheme.colorScheme.secondaryContainer
                 ),
                 shape = RoundedCornerShape(
                     topStart = 4.dp,
@@ -615,7 +619,7 @@ private fun ConversationMessage(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "AI Assistant",
+                            text = if (message.hasToolCalls) "AI Assistant ⚡" else "AI Assistant",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.secondary,
                             fontWeight = FontWeight.Medium
@@ -689,11 +693,18 @@ private fun parseConversationMessages(conversationText: String): List<Conversati
                     messages.add(ConversationMessage(content, isUser = true))
                 }
             }
+            line.startsWith("LLM_TOOL >> ") -> {
+                // LLM response with tool calls
+                val content = line.removePrefix("LLM_TOOL >> ").trim()
+                if (content.isNotBlank() && content != "(no response)") {
+                    messages.add(ConversationMessage(content, isUser = false, hasToolCalls = true))
+                }
+            }
             line.startsWith("LLM >> ") -> {
-                // LLM response
+                // LLM response without tool calls
                 val content = line.removePrefix("LLM >> ").trim()
                 if (content.isNotBlank() && content != "(no response)") {
-                    messages.add(ConversationMessage(content, isUser = false))
+                    messages.add(ConversationMessage(content, isUser = false, hasToolCalls = false))
                 }
             }
         }

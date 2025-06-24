@@ -81,8 +81,12 @@ class MainViewModel : ViewModel() {
         appState = appState.copy(selectedModelFile = file)
     }
 
-    fun appendLLMResponse(response: String, durationMs: Long) {
-        val formatted = if (response.isNotBlank()) "LLM >> $response" else "LLM >> (no response)"
+    fun appendLLMResponse(response: String, durationMs: Long, hasToolCalls: Boolean = false) {
+        val formatted = if (response.isNotBlank()) {
+            if (hasToolCalls) "LLM_TOOL >> $response" else "LLM >> $response"
+        } else {
+            "LLM >> (no response)"
+        }
         val newText = if (appState.transcriptionText.isEmpty()) {
             formatted
         } else {

@@ -287,7 +287,7 @@ class TranscriptionManager(
                                 }
                             }
                             
-                            viewModel.appendLLMResponse(llmResponse.finalText, duration)
+                            viewModel.appendLLMResponse(llmResponse.finalText, duration, llmResponse.hasToolCalls)
                             Log.d(TAG, "Enhanced LLM response received (${duration}ms): \"${llmResponse.finalText}\"")
                             
                             // Use TTS to read the response aloud
@@ -305,7 +305,7 @@ class TranscriptionManager(
                             // Fallback to basic response if enhanced fails
                             val fallbackResponse = llm.generateResponse(transcriptionText) ?: ""
                             if (fallbackResponse.isNotBlank()) {
-                                viewModel.appendLLMResponse(fallbackResponse, duration)
+                                viewModel.appendLLMResponse(fallbackResponse, duration, false)
                                 ttsManager?.speak(fallbackResponse)
                                 Log.d(TAG, "Fallback LLM response used: \"$fallbackResponse\"")
                             }
@@ -322,7 +322,7 @@ class TranscriptionManager(
                             coroutineScope.launch {
                                 val fallbackResponse = llm.generateResponse(transcriptionText) ?: ""
                                 if (fallbackResponse.isNotBlank()) {
-                                    viewModel.appendLLMResponse(fallbackResponse, 0)
+                                    viewModel.appendLLMResponse(fallbackResponse, 0, false)
                                     Log.d(TAG, "Fallback response used after error")
                                 }
                             }

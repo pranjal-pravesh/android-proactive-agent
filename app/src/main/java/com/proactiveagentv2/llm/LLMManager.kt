@@ -299,6 +299,11 @@ class LLMManager(private val context: Context) {
                 isInitialized = true
                 currentModel = modelInfo
                 
+                // Configure prompt builder for current model type
+                promptBuilder.setModelType(modelInfo.modelType)
+                Log.i(TAG, "🎯 PROMPT BUILDER CONFIGURED FOR ${modelInfo.modelType}")
+                Log.i(TAG, "System prompt preview: ${promptBuilder.buildSystemPrompt().take(200)}...")
+                
                 // Log detailed initialization status
                 logInitializationStatus(modelInfo, finalConfig, inferenceEngine)
                 
@@ -555,6 +560,9 @@ class LLMManager(private val context: Context) {
             
             // Build the initial prompt using ChatML format
             val systemPrompt = if (useTools) promptBuilder.buildSystemPrompt() else promptBuilder.buildBasicSystemPrompt()
+            Log.i(TAG, "🔧 BUILDING PROMPT FOR USER INPUT: $userInput")
+            Log.i(TAG, "📋 USING SYSTEM PROMPT (${if (useTools) "WITH TOOLS" else "BASIC"}): ${systemPrompt.take(150)}...")
+            
             val chatMLPrompt = promptBuilder.buildChatMLPrompt(
                 systemPrompt = systemPrompt,
                 userInput = userInput,
@@ -562,8 +570,8 @@ class LLMManager(private val context: Context) {
                 includeContext = includeContext
             )
             
-            Log.d(TAG, "ChatML prompt length: ${chatMLPrompt.length} characters")
-            Log.v(TAG, "ChatML prompt preview: ${chatMLPrompt.take(200)}...")
+            Log.i(TAG, "📝 COMPLETE PROMPT LENGTH: ${chatMLPrompt.length} characters")
+            Log.i(TAG, "🎯 PROMPT PREVIEW: ${chatMLPrompt.take(300)}...")
             
             // Validate and log ChatML format for debugging
             val isValidChatML = promptBuilder.validateChatMLFormat(chatMLPrompt)
@@ -588,7 +596,7 @@ class LLMManager(private val context: Context) {
                 )
             }
             
-            Log.d(TAG, "Initial LLM response: $initialResponse")
+            Log.i(TAG, "🤖 RAW LLM RESPONSE: $initialResponse")
             
             // Calculate performance metrics
             val tokensGenerated = estimateTokenCount(initialResponse)
@@ -611,33 +619,32 @@ class LLMManager(private val context: Context) {
             
             // Check for tool calls if tools are enabled
             if (useTools) {
-                val toolCalls = promptBuilder.parseToolCalls(initialResponse)
+                Log.i(TAG, "🔍 CHECKING FOR TOOL CALLS IN RESPONSE...")
+                var toolCalls = promptBuilder.parseToolCalls(initialResponse)
+                
+                // Fallback: If no tool calls detected but input requires tools, force them
+                if (toolCalls.isEmpty()) {
+                    Log.w(TAG, "⚠️ NO TOOL CALLS DETECTED, CHECKING IF WE SHOULD FORCE THEM...")
+                    toolCalls = detectAndForceMissingToolCalls(userInput, initialResponse)
+                }
                 
                 if (toolCalls.isNotEmpty()) {
-                    Log.d(TAG, "Found ${toolCalls.size} tool calls")
+                    Log.i(TAG, "✅ FOUND ${toolCalls.size} TOOL CALLS: ${toolCalls.map { "${it.toolName}(${it.parameters})" }}")
                     
                     // Execute tools
                     val toolResults = toolManager.executeTools(toolCalls)
                     
-                    // Generate final response with tool results using ChatML
-                    val chatMLPromptWithResults = promptBuilder.buildChatMLPromptWithToolResults(
-                        systemPrompt = systemPrompt,
-                        userInput = userInput,
-                        toolResults = toolResults,
-                        conversationHistory = if (includeContext) conversationHistory else emptyList(),
-                        includeContext = includeContext
-                    )
-                    
-                    Log.v(TAG, "ChatML prompt with tools preview: ${chatMLPromptWithResults.take(300)}...")
-                    val finalResponse = generateWithMediaPipe(chatMLPromptWithResults)
+                    // ⚡ OPTIMIZATION: Skip second LLM call, format tool results directly
+                    val finalResponse = formatToolResultsDirectly(toolResults, userInput)
+                    Log.i(TAG, "⚡ OPTIMIZED: Using direct tool result formatting (no second LLM call)")
                     
                     // Update conversation history
                     addToConversationHistory("User: $userInput")
-                    addToConversationHistory("Assistant: ${finalResponse ?: initialResponse}")
+                    addToConversationHistory("Assistant: $finalResponse")
                     
                     return@withContext LLMResponse(
                         originalText = initialResponse,
-                        finalText = finalResponse ?: initialResponse,
+                        finalText = finalResponse,
                         toolResults = toolResults,
                         hasToolCalls = true,
                         success = true,
@@ -690,6 +697,145 @@ class LLMManager(private val context: Context) {
     private fun estimateTokenCount(text: String): Int {
         // Rough estimate: 1 token ≈ 4 characters for English text
         return maxOf(1, text.length / 4)
+    }
+    
+    /**
+     * Format tool results directly into natural language without second LLM call
+     */
+    private fun formatToolResultsDirectly(toolResults: List<ToolResult>, userInput: String): String {
+        if (toolResults.isEmpty()) return "I couldn't find any results for your request."
+        
+        return toolResults.joinToString("\n\n") { result ->
+            when {
+                !result.success -> "I encountered an error: ${result.error}"
+                result.toolName == "WEATHER" -> {
+                    // Parse weather result
+                    val lines = result.result.split("\n")
+                    val location = lines.find { it.startsWith("Weather in") }?.substringAfter("Weather in ")?.removeSuffix(":")
+                    val temperature = lines.find { it.startsWith("Temperature:") }?.substringAfter("Temperature: ")
+                    val conditions = lines.find { it.startsWith("Conditions:") }?.substringAfter("Conditions: ")
+                    
+                    if (temperature != null && conditions != null) {
+                        "The current weather in ${location ?: "your location"} is $temperature with ${conditions.lowercase()} conditions."
+                    } else {
+                        result.result
+                    }
+                }
+                result.toolName == "CALCULATOR" -> {
+                    val answer = result.result.trim()
+                    when {
+                        userInput.lowercase().contains("area") && userInput.lowercase().contains("circle") -> 
+                            "The area of the circle is $answer square units."
+                        userInput.lowercase().contains("circumference") -> 
+                            "The circumference is $answer units."
+                        userInput.lowercase().contains("temperature") || userInput.lowercase().contains("convert") -> 
+                            "The converted temperature is $answer."
+                        userInput.lowercase().contains("percentage") || userInput.lowercase().contains("%") -> 
+                            "The result is $answer."
+                        else -> "The calculation result is $answer."
+                    }
+                }
+                result.toolName == "CALENDAR" -> {
+                    when {
+                        userInput.lowercase().contains("add") || userInput.lowercase().contains("schedule") -> 
+                            "I've added the event to your calendar: ${result.result}"
+                        userInput.lowercase().contains("check") || userInput.lowercase().contains("what") -> 
+                            "Here's what I found on your calendar: ${result.result}"
+                        userInput.lowercase().contains("cancel") || userInput.lowercase().contains("delete") -> 
+                            "I've removed the event from your calendar: ${result.result}"
+                        userInput.lowercase().contains("update") || userInput.lowercase().contains("change") -> 
+                            "I've updated your calendar event: ${result.result}"
+                        else -> result.result
+                    }
+                }
+                else -> result.result
+            }
+        }
+    }
+    
+    /**
+     * Detects when the model should have used tools but didn't, and forces tool calls
+     */
+    private fun detectAndForceMissingToolCalls(userInput: String, modelResponse: String): List<ToolCall> {
+        val lowercaseInput = userInput.lowercase()
+        val forcedToolCalls = mutableListOf<ToolCall>()
+        
+        // Check if model provided a direct answer when it should have used tools
+        val modelProvidedDirectAnswer = modelResponse.length > 10 && 
+                                       !modelResponse.contains("TOOL_CALL") &&
+                                       !modelResponse.contains("I need to") &&
+                                       !modelResponse.contains("Let me")
+        
+        if (modelProvidedDirectAnswer) {
+            // Weather detection patterns
+            val weatherKeywords = listOf("weather", "temperature", "rain", "sunny", "cloudy", "forecast", "climate")
+            val hasWeatherKeyword = weatherKeywords.any { lowercaseInput.contains(it) }
+            
+            if (hasWeatherKeyword) {
+                // Extract location from input
+                val locationPatterns = listOf(
+                    Regex("\\b(?:in|at|for)\\s+([a-zA-Z\\s]+?)(?:\\s|\\?|\\.|$)"),
+                    Regex("weather\\s+(?:in\\s+)?([a-zA-Z\\s]+?)(?:\\s|\\?|\\.|$)"),
+                    Regex("\\b([A-Z][a-zA-Z\\s]{2,15})\\s+weather")
+                )
+                
+                for (pattern in locationPatterns) {
+                    val match = pattern.find(userInput)
+                    if (match != null) {
+                        val location = match.groupValues[1].trim()
+                        if (location.isNotBlank()) {
+                            forcedToolCalls.add(ToolCall("WEATHER", location))
+                            Log.w(TAG, "FORCED weather tool call for location: $location")
+                            break
+                        }
+                    }
+                }
+            }
+            
+            // Math detection patterns
+            val mathKeywords = listOf("calculate", "area", "volume", "circumference", "percentage", "square", "radius")
+            val hasMathKeyword = mathKeywords.any { lowercaseInput.contains(it) }
+            val hasMathSymbols = Regex("[+\\-*/=×÷%^]|\\d+\\s*[+\\-*/×÷]\\s*\\d+").containsMatchIn(lowercaseInput)
+            
+            if (hasMathKeyword || hasMathSymbols) {
+                // Extract mathematical expression or convert word problem
+                val mathExpression = when {
+                    lowercaseInput.contains("area") && lowercaseInput.contains("circle") && lowercaseInput.contains("radius") -> {
+                        val radiusMatch = Regex("radius\\s+(\\d+(?:\\.\\d+)?)").find(lowercaseInput)
+                        if (radiusMatch != null) {
+                            val radius = radiusMatch.groupValues[1]
+                            "3.14159*$radius*$radius"
+                        } else null
+                    }
+                    lowercaseInput.contains("circumference") && lowercaseInput.contains("circle") && lowercaseInput.contains("radius") -> {
+                        val radiusMatch = Regex("radius\\s+(\\d+(?:\\.\\d+)?)").find(lowercaseInput)
+                        if (radiusMatch != null) {
+                            val radius = radiusMatch.groupValues[1]
+                            "2*3.14159*$radius"
+                        } else null
+                    }
+                    hasMathSymbols -> {
+                        // Extract direct mathematical expression
+                        val mathMatch = Regex("(\\d+(?:\\.\\d+)?\\s*[+\\-*/×÷]\\s*\\d+(?:\\.\\d+)?)").find(userInput)
+                        mathMatch?.groupValues?.get(1)?.replace("×", "*")?.replace("÷", "/")
+                    }
+                    else -> null
+                }
+                
+                if (!mathExpression.isNullOrBlank()) {
+                    forcedToolCalls.add(ToolCall("CALCULATOR", mathExpression))
+                    Log.w(TAG, "FORCED calculator tool call for expression: $mathExpression")
+                }
+            }
+        }
+        
+        if (forcedToolCalls.isNotEmpty()) {
+            Log.w(TAG, "🚨 MODEL IGNORED TOOL REQUIREMENTS! FORCING ${forcedToolCalls.size} TOOL CALLS: ${forcedToolCalls.map { "${it.toolName}(${it.parameters})" }}")
+        } else {
+            Log.d(TAG, "✅ No forced tool calls needed")
+        }
+        
+        return forcedToolCalls
     }
     
     /**
