@@ -99,9 +99,11 @@ dependencies {
     // Kotlin standard library
     implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.22"
 
-    // Main TensorFlow Lite library
-    implementation 'org.tensorflow:tensorflow-lite:2.14.0'
-    implementation 'org.tensorflow:tensorflow-lite-support:0.4.4'
+    // LiteRT dependencies (replaces TensorFlow Lite)
+    implementation 'com.google.ai.edge.litert:litert:1.0.1'
+    implementation 'com.google.ai.edge.litert:litert-gpu:1.0.1'
+    implementation 'com.google.ai.edge.litert:litert-gpu-api:1.0.1'
+    implementation 'com.google.ai.edge.litert:litert-support:1.0.1'
     
     // JSON parsing for custom tokenizer
     implementation 'org.json:json:20230227'

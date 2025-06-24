@@ -10,6 +10,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -382,18 +383,54 @@ private fun SettingsSlider(
 @Composable
 private fun LLMModelSection(llmManager: LLMManager) {
     val scope = rememberCoroutineScope()
-    val modelInfo = LLMManager.QWEN_MODEL
+    val availableModels = LLMManager.getAllAvailableModels()
+    val currentModel = llmManager.getCurrentModel()
     
-    var modelStatus by remember { mutableStateOf(llmManager.getModelStatus(modelInfo)) }
+    var selectedModelIndex by remember { mutableStateOf(
+        availableModels.indexOfFirst { it.modelId == currentModel?.modelId }.let { if (it >= 0) it else 0 }
+    )}
+    var modelStatuses by remember { mutableStateOf(
+        availableModels.map { llmManager.getModelStatus(it) }
+    )}
     var downloadProgress by remember { mutableStateOf<DownloadProgress?>(null) }
     var isProcessing by remember { mutableStateOf(false) }
+    var showGpuSettings by remember { mutableStateOf(false) }
+    
+    // Track GPU settings for each model
+    var modelGpuSettings by remember { mutableStateOf(
+        availableModels.associate { it.modelId to it.defaultConfig.useGPU }
+    )}
     
     Text(
-        text = "AI Language Model",
+        text = "AI Language Models",
         fontSize = 16.sp,
         fontWeight = FontWeight.Medium,
         color = MaterialTheme.colorScheme.primary
     )
+    
+    // Model Selection Tabs
+    TabRow(
+        selectedTabIndex = selectedModelIndex,
+        containerColor = MaterialTheme.colorScheme.surfaceVariant
+    ) {
+        availableModels.forEachIndexed { index, model ->
+            Tab(
+                selected = selectedModelIndex == index,
+                onClick = { selectedModelIndex = index },
+                text = { 
+                    Text(
+                        text = model.name.split(" ").take(2).joinToString(" "),
+                        fontSize = 12.sp
+                    )
+                }
+            )
+        }
+    }
+    
+    Spacer(modifier = Modifier.height(8.dp))
+    
+    val selectedModel = availableModels[selectedModelIndex]
+    val selectedModelStatus = modelStatuses[selectedModelIndex]
     
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -413,31 +450,47 @@ private fun LLMModelSection(llmManager: LLMManager) {
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = modelInfo.name,
+                        text = selectedModel.name,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        text = "Size: ${llmManager.getModelSize(modelInfo)}",
+                        text = "Size: ${llmManager.getModelSize(selectedModel)}",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    if (selectedModel.isLocalOnly) {
+                        Text(
+                            text = "Local only - requires manual import",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontStyle = FontStyle.Italic
+                        )
+                    }
+                    if (selectedModel.supportsGPU) {
+                        Text(
+                            text = "Supports GPU acceleration with MediaPipe",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontStyle = FontStyle.Italic
+                        )
+                    }
                 }
                 
                 // Status indicator
-                when (modelStatus) {
-                    ModelDownloadStatus.DOWNLOADED -> {
+                when (selectedModelStatus) {
+                    ModelDownloadStatus.DOWNLOADED, ModelDownloadStatus.LOCAL_ONLY -> {
                         Icon(
                             imageVector = Icons.Default.CheckCircle,
-                            contentDescription = "Downloaded",
+                            contentDescription = "Available",
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(24.dp)
                         )
                     }
                     ModelDownloadStatus.NOT_DOWNLOADED -> {
                         Icon(
-                            imageVector = Icons.Default.CloudDownload,
-                            contentDescription = "Not downloaded",
+                            imageVector = if (selectedModel.isLocalOnly) Icons.Default.Upload else Icons.Default.CloudDownload,
+                            contentDescription = if (selectedModel.isLocalOnly) "Import required" else "Not downloaded",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(24.dp)
                         )
@@ -475,6 +528,100 @@ private fun LLMModelSection(llmManager: LLMManager) {
                 }
             }
             
+            // GPU Settings info for models that will support it
+            if (selectedModel.supportsGPU) {
+                val gpuInfo = remember { llmManager.checkGPUCompatibility() }
+                val useGPU = modelGpuSettings[selectedModel.modelId] ?: selectedModel.defaultConfig.useGPU
+                
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (gpuInfo.isSupported) 
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                        else 
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (gpuInfo.isSupported) "GPU Acceleration" else "GPU Not Available",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (gpuInfo.isSupported) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                                )
+                                if (gpuInfo.isSupported) {
+                                    val currentEngine = llmManager.getCurrentInferenceEngine()
+                                    val isCurrentModel = llmManager.getCurrentModel()?.modelId == selectedModel.modelId
+                                    val statusText = when {
+                                        !isCurrentModel -> "Ready for ${if (useGPU) "GPU" else "CPU"} acceleration"
+                                        currentEngine == com.proactiveagentv2.llm.InferenceEngine.MEDIAPIPE_GPU -> "🚀 GPU acceleration active"
+                                        currentEngine == com.proactiveagentv2.llm.InferenceEngine.MEDIAPIPE_CPU -> "🔧 MediaPipe CPU active"
+                                        else -> "🔧 MediaPipe CPU active"
+                                    }
+                                    Text(
+                                        text = statusText,
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontStyle = FontStyle.Italic
+                                    )
+                                }
+                            }
+                            Switch(
+                                checked = useGPU,
+                                onCheckedChange = { newValue ->
+                                    modelGpuSettings = modelGpuSettings.toMutableMap().apply {
+                                        put(selectedModel.modelId, newValue)
+                                    }
+                                },
+                                enabled = gpuInfo.isSupported
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        val currentEngine = llmManager.getCurrentInferenceEngine()
+                        val isCurrentModel = llmManager.getCurrentModel()?.modelId == selectedModel.modelId
+                        val performanceMetrics = llmManager.getLastInferenceMetrics()
+                        
+                        Text(
+                            text = if (gpuInfo.isSupported) {
+                                when {
+                                    !isCurrentModel && useGPU -> "GPU acceleration enabled. Will use MediaPipe GPU delegate when model is initialized."
+                                    !isCurrentModel && !useGPU -> "CPU-only mode selected."
+                                    isCurrentModel && currentEngine == com.proactiveagentv2.llm.InferenceEngine.MEDIAPIPE_GPU -> "🚀 GPU acceleration is ACTIVE! Using MediaPipe LLM API with GPU delegate."
+                                    isCurrentModel && currentEngine == com.proactiveagentv2.llm.InferenceEngine.MEDIAPIPE_CPU -> "🔧 Currently using MediaPipe CPU inference."
+                                    else -> "Configure GPU settings for this model."
+                                }
+                            } else {
+                                "GPU acceleration not supported on this device."
+                            },
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontStyle = FontStyle.Italic
+                        )
+                        
+                        // Show performance metrics if available and model is current
+                        if (isCurrentModel && performanceMetrics != null) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "⚡ Performance: ${String.format("%.1f", performanceMetrics.tokensPerSecond)} tokens/sec with ${performanceMetrics.inferenceEngine}",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontStyle = FontStyle.Italic
+                            )
+                        }
+                    }
+                }
+            }
+            
             // Action buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -486,51 +633,104 @@ private fun LLMModelSection(llmManager: LLMManager) {
                     uri?.let {
                         scope.launch {
                             isProcessing = true
-                            val ok = llmManager.importModelFromUri(it, modelInfo)
-                            modelStatus = if (ok) ModelDownloadStatus.DOWNLOADED else ModelDownloadStatus.ERROR
+                            val ok = llmManager.importModelFromUri(it, selectedModel)
+                            val newStatuses = modelStatuses.toMutableList()
+                            newStatuses[selectedModelIndex] = if (ok) {
+                                if (selectedModel.isLocalOnly) ModelDownloadStatus.LOCAL_ONLY else ModelDownloadStatus.DOWNLOADED
+                            } else ModelDownloadStatus.ERROR
+                            modelStatuses = newStatuses
                             isProcessing = false
                         }
                     }
                 }
-                when (modelStatus) {
-                    ModelDownloadStatus.NOT_DOWNLOADED, ModelDownloadStatus.ERROR -> {
-                        Button(
-                            onClick = {
-                                if (!isProcessing) {
-                                    isProcessing = true
-                                    modelStatus = ModelDownloadStatus.DOWNLOADING
+                
+                when (selectedModelStatus) {
+                    ModelDownloadStatus.NOT_DOWNLOADED -> {
+                        if (selectedModel.isLocalOnly) {
+                            // For local-only models, show import options
+                            Button(
+                                onClick = { importLauncher.launch("*/*") },
+                                enabled = !isProcessing,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Import .task file")
+                            }
+                            // Check for external files
+                            OutlinedButton(
+                                onClick = {
                                     scope.launch {
-                                        val success = llmManager.downloadModel(modelInfo) { progress ->
-                                            downloadProgress = progress
+                                        isProcessing = true
+                                        val foundPaths = llmManager.findExternalModelFile(selectedModel)
+                                        if (foundPaths.isNotEmpty()) {
+                                            val success = llmManager.importModelFromPath(foundPaths.first(), selectedModel)
+                                            val newStatuses = modelStatuses.toMutableList()
+                                            newStatuses[selectedModelIndex] = if (success) ModelDownloadStatus.LOCAL_ONLY else ModelDownloadStatus.ERROR
+                                            modelStatuses = newStatuses
                                         }
-                                        modelStatus = if (success) ModelDownloadStatus.DOWNLOADED else ModelDownloadStatus.ERROR
-                                        downloadProgress = null
                                         isProcessing = false
                                     }
-                                }
-                            },
-                            enabled = !isProcessing,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Download Model")
+                                },
+                                enabled = !isProcessing,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Auto-find")
+                            }
+                        } else {
+                            // For downloadable models
+                            Button(
+                                onClick = {
+                                    if (!isProcessing) {
+                                        isProcessing = true
+                                        val newStatuses = modelStatuses.toMutableList()
+                                        newStatuses[selectedModelIndex] = ModelDownloadStatus.DOWNLOADING
+                                        modelStatuses = newStatuses
+                                        scope.launch {
+                                            val success = llmManager.downloadModel(selectedModel) { progress ->
+                                                downloadProgress = progress
+                                            }
+                                            val finalStatuses = modelStatuses.toMutableList()
+                                            finalStatuses[selectedModelIndex] = if (success) ModelDownloadStatus.DOWNLOADED else ModelDownloadStatus.ERROR
+                                            modelStatuses = finalStatuses
+                                            downloadProgress = null
+                                            isProcessing = false
+                                        }
+                                    }
+                                },
+                                enabled = !isProcessing,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Download Model")
+                            }
+                            OutlinedButton(
+                                onClick = { importLauncher.launch("*/*") },
+                                enabled = !isProcessing,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Import .task")
+                            }
                         }
-                        OutlinedButton(
+                    }
+                    
+                    ModelDownloadStatus.ERROR -> {
+                        Button(
                             onClick = { importLauncher.launch("*/*") },
                             enabled = !isProcessing,
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("Import .task")
+                            Text("Import .task file")
                         }
                     }
                     
-                    ModelDownloadStatus.DOWNLOADED -> {
+                    ModelDownloadStatus.DOWNLOADED, ModelDownloadStatus.LOCAL_ONLY -> {
                         OutlinedButton(
                             onClick = {
                                 if (!isProcessing) {
                                     isProcessing = true
                                     scope.launch {
-                                        if (llmManager.deleteModel(modelInfo)) {
-                                            modelStatus = ModelDownloadStatus.NOT_DOWNLOADED
+                                        if (llmManager.deleteModel(selectedModel)) {
+                                            val newStatuses = modelStatuses.toMutableList()
+                                            newStatuses[selectedModelIndex] = ModelDownloadStatus.NOT_DOWNLOADED
+                                            modelStatuses = newStatuses
                                         }
                                         isProcessing = false
                                     }
@@ -547,15 +747,23 @@ private fun LLMModelSection(llmManager: LLMManager) {
                                 if (!isProcessing) {
                                     isProcessing = true
                                     scope.launch {
-                                        llmManager.initializeModel(modelInfo)
+                                        // Use current GPU setting from UI
+                                        val currentGpuSetting = modelGpuSettings[selectedModel.modelId] ?: selectedModel.defaultConfig.useGPU
+                                        val config = selectedModel.defaultConfig.copy(
+                                            useGPU = if (selectedModel.supportsGPU) currentGpuSetting else false
+                                        )
+                                        llmManager.initializeModel(selectedModel, config)
                                         isProcessing = false
                                     }
                                 }
                             },
-                            enabled = !isProcessing && !llmManager.isModelInitialized(),
+                            enabled = !isProcessing && (llmManager.getCurrentModel()?.modelId != selectedModel.modelId),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text(if (llmManager.isModelInitialized()) "Ready" else "Initialize")
+                            Text(
+                                if (llmManager.getCurrentModel()?.modelId == selectedModel.modelId) "Active" 
+                                else "Initialize"
+                            )
                         }
                     }
                     
@@ -573,7 +781,7 @@ private fun LLMModelSection(llmManager: LLMManager) {
             
             // Model description
             Text(
-                text = modelInfo.description,
+                text = selectedModel.description,
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 lineHeight = 16.sp

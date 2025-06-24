@@ -6,6 +6,7 @@ import com.proactiveagentv2.asr.Player
 import com.proactiveagentv2.asr.Recorder
 import com.proactiveagentv2.asr.Whisper
 import com.proactiveagentv2.llm.LLMManager
+import com.proactiveagentv2.llm.ModelManager
 import com.proactiveagentv2.ui.MainViewModel
 import com.proactiveagentv2.utils.WaveUtil
 import com.proactiveagentv2.vad.VADManager
@@ -32,6 +33,8 @@ class AppInitializer(
     var vadManager: VADManager? = null
         private set
     var llmManager: LLMManager? = null
+        private set
+    var modelManager: ModelManager? = null
         private set
     var classifierManager: ClassifierManager? = null
         private set
@@ -114,14 +117,34 @@ class AppInitializer(
     }
     
     private fun initializeLLMSystem() {
-        Log.d(TAG, "Initializing LLM system...")
+        Log.d(TAG, "Initializing multi-model LLM system...")
         
         try {
-            llmManager = LLMManager(context)
-            Log.d(TAG, "LLM manager created successfully (model not loaded)")
-            Log.d(TAG, "Note: LLM model needs to be downloaded and initialized separately via settings")
+            modelManager = ModelManager(context)
+            llmManager = modelManager?.getLLMManager()
+            
+            Log.d(TAG, "Multi-model LLM system created successfully")
+            Log.d(TAG, "Available models: ${llmManager?.getAvailableModels()?.map { it.name }}")
+            Log.d(TAG, "Note: Models need to be downloaded/imported and initialized via settings")
+            
+            // Try to auto-initialize the best available model
+            // This is done without blocking the initialization process
+            /* 
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val initializedModel = modelManager?.initializeBestAvailableModel(preferGPU = true)
+                    if (initializedModel != null) {
+                        Log.d(TAG, "Auto-initialized model: ${initializedModel.name}")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Auto-initialization failed", e)
+                }
+            }
+            */
+            
         } catch (e: Exception) {
-            Log.e(TAG, "Error creating LLM manager", e)
+            Log.e(TAG, "Error creating LLM system", e)
+            modelManager = null
             llmManager = null
             Log.w(TAG, "LLM functionality will be disabled")
         }
@@ -174,7 +197,8 @@ class AppInitializer(
         vadManager?.release()
         vadManager = null
         
-        llmManager?.release()
+        modelManager?.release()
+        modelManager = null
         llmManager = null
         
         classifierManager?.release()

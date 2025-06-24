@@ -6,6 +6,7 @@ import android.widget.Toast
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import com.proactiveagentv2.llm.LLMManager
+import com.proactiveagentv2.llm.ModelManager
 import com.proactiveagentv2.ui.MainViewModel
 import com.proactiveagentv2.ui.SettingsState
 
@@ -119,6 +120,7 @@ class UICoordinator(
     fun getAvailableModels() = settingsManager?.getAvailableModels() ?: emptyList()
     
     fun getLLMManager(): LLMManager? = appInitializer?.llmManager
+    fun getModelManager(): ModelManager? = appInitializer?.modelManager
     
     fun showError(message: String) {
         Log.w(TAG, "Showing error to user: $message")
