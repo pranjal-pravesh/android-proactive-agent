@@ -1,6 +1,7 @@
 package com.proactiveagentv2.llm
 
 import android.util.Log
+import com.proactiveagentv2.managers.MemoryItem
 
 /**
  * Builds comprehensive system prompts for the LLM with tool call capabilities
@@ -16,6 +17,28 @@ class PromptBuilder {
     fun setModelType(modelType: ModelType) {
         currentModelType = modelType
         Log.d(TAG, "Prompt builder configured for model type: $modelType")
+    }
+    
+    /**
+     * Build RAG context section from relevant memories
+     */
+    private fun buildRAGContext(memories: List<MemoryItem>): String {
+        if (memories.isEmpty()) return ""
+        
+        val context = StringBuilder()
+        context.append("RELEVANT CONTEXT FROM MEMORY:\n\n")
+        
+        memories.forEachIndexed { index, memory ->
+            val formattedTimestamp = java.text.SimpleDateFormat("MMM dd, HH:mm", java.util.Locale.getDefault())
+                .format(java.util.Date(memory.timestamp))
+            
+            context.append("${index + 1}. [${formattedTimestamp}] ${memory.text}\n")
+        }
+        
+        context.append("\nPlease use this context to provide more accurate and relevant answers. If the context contains information relevant to the user's question, reference it in your response.")
+        
+        Log.d(TAG, "Built RAG context with ${memories.size} memories, ${context.length} characters")
+        return context.toString()
     }
     
     /**
@@ -195,7 +218,8 @@ Be helpful and conversational. For tools, use JSON format only.
         systemPrompt: String,
         userInput: String,
         conversationHistory: List<String> = emptyList(),
-        includeContext: Boolean = false
+        includeContext: Boolean = false,
+        relevantMemories: List<MemoryItem> = emptyList()
     ): String {
         Log.d(TAG, "Building formatted prompt for $currentModelType with input: $userInput")
         
@@ -211,6 +235,15 @@ Be helpful and conversational. For tools, use JSON format only.
         prompt.append(systemStart)
         prompt.append(systemPrompt)
         prompt.append(endToken)
+        
+        // Add RAG context from relevant memories if available
+        if (relevantMemories.isNotEmpty()) {
+            Log.d(TAG, "Adding ${relevantMemories.size} relevant memories as context")
+            val contextSection = buildRAGContext(relevantMemories)
+            prompt.append(userStart)
+            prompt.append(contextSection)
+            prompt.append(endToken)
+        }
         
         // Add conversation context if needed using proper format
         if (includeContext && conversationHistory.isNotEmpty()) {

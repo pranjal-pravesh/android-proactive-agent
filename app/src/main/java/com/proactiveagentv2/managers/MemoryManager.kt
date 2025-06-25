@@ -24,7 +24,9 @@ class MemoryManager(private val context: Context) {
     private val memories = mutableListOf<MemoryItem>()
     private var isInitialized = false
     private val memoryFile: File by lazy { 
-        File(context.filesDir, "memory_storage.json") 
+        // Use external files directory so it's visible on PC via USB
+        val externalDir = context.getExternalFilesDir(null) ?: context.filesDir
+        File(externalDir, "memory_storage.json")
     }
     
     // Gecko embedding components
@@ -260,18 +262,29 @@ class MemoryManager(private val context: Context) {
      * Store a text chunk in memory with embeddings
      */
     suspend fun storeMemory(text: String, metadata: Map<String, String> = emptyMap()): Boolean = withContext(Dispatchers.IO) {
+        Log.i(TAG, "🔄 ATTEMPTING TO STORE MEMORY: \"${text.take(100)}...\"")
+        Log.d(TAG, "   📊 Current memory count: ${memories.size}")
+        Log.d(TAG, "   📁 Memory file path: ${memoryFile.absolutePath}")
+        Log.d(TAG, "   🔧 Is initialized: $isInitialized")
+        
         if (!isInitialized) {
-            Log.w(TAG, "⚠️ Memory system not initialized, cannot store memory")
-            return@withContext false
+            Log.w(TAG, "⚠️ Memory system not initialized, attempting to initialize now...")
+            val initSuccess = initialize()
+            if (!initSuccess) {
+                Log.e(TAG, "❌ Failed to initialize memory system")
+                return@withContext false
+            }
         }
         
         try {
+            Log.d(TAG, "🧮 Generating embedding for text...")
             // Generate embedding for the text
             val embedding = generateEmbedding(text)
             if (embedding == null) {
                 Log.e(TAG, "❌ Failed to generate embedding for text")
                 return@withContext false
             }
+            Log.d(TAG, "✅ Embedding generated successfully (${embedding.size} dimensions)")
             
             // Add timestamp and type metadata
             val enrichedMetadata = metadata.toMutableMap().apply {
@@ -288,13 +301,17 @@ class MemoryManager(private val context: Context) {
             )
             
             memories.add(memoryItem)
-            saveMemoriesToFile()
+            Log.d(TAG, "📝 Added to memory list (new count: ${memories.size})")
             
-            Log.d(TAG, "💾 Stored memory with embedding: ${text.take(50)}...")
+            saveMemoriesToFile()
+            Log.i(TAG, "💾 SUCCESSFULLY STORED MEMORY: \"${text.take(50)}...\"")
+            Log.d(TAG, "📁 Memory file exists: ${memoryFile.exists()}, size: ${if(memoryFile.exists()) memoryFile.length() else 0} bytes")
+            
             return@withContext true
             
         } catch (e: Exception) {
             Log.e(TAG, "❌ Failed to store memory", e)
+            e.printStackTrace()
             return@withContext false
         }
     }
@@ -307,13 +324,23 @@ class MemoryManager(private val context: Context) {
         maxResults: Int = 3,
         minSimilarity: Float = 0.3f
     ): List<MemoryItem> = withContext(Dispatchers.IO) {
+        Log.i(TAG, "🔍 RETRIEVING MEMORIES FOR QUERY: \"${query.take(100)}...\"")
+        Log.d(TAG, "   📊 Available memories: ${memories.size}")
+        Log.d(TAG, "   📝 Max results: $maxResults, Min similarity: $minSimilarity")
+        Log.d(TAG, "   🔧 Is initialized: $isInitialized")
+        
         if (!isInitialized) {
             Log.w(TAG, "⚠️ Memory system not initialized, cannot retrieve memories")
             return@withContext emptyList()
         }
         
+        if (memories.isEmpty()) {
+            Log.w(TAG, "⚠️ No memories stored, returning empty list")
+            return@withContext emptyList()
+        }
+        
         try {
-            Log.d(TAG, "🔍 Retrieving memories for query: ${query.take(50)}...")
+            Log.d(TAG, "🧮 Generating query embedding...")
             
             // Generate embedding for the query
             val queryEmbedding = generateEmbedding(query)
@@ -321,11 +348,14 @@ class MemoryManager(private val context: Context) {
                 Log.e(TAG, "❌ Failed to generate embedding for query")
                 return@withContext emptyList()
             }
+            Log.d(TAG, "✅ Query embedding generated (${queryEmbedding.size} dimensions)")
             
             // Calculate similarities with all stored memories
+            Log.d(TAG, "🔢 Calculating similarities with ${memories.size} stored memories...")
             val scoredMemories = memories.mapNotNull { memory ->
                 memory.embedding?.let { memoryEmbedding ->
                     val similarity = calculateCosineSimilarity(queryEmbedding, memoryEmbedding)
+                    Log.v(TAG, "   📄 Memory similarity ${String.format("%.3f", similarity)}: \"${memory.text.take(30)}...\"")
                     memory.copy(similarity = similarity)
                 }
             }
@@ -335,15 +365,16 @@ class MemoryManager(private val context: Context) {
                 .sortedByDescending { it.similarity }
                 .take(maxResults)
             
-            Log.d(TAG, "📚 Retrieved ${relevantMemories.size} relevant memories using semantic search")
+            Log.i(TAG, "📚 RETRIEVED ${relevantMemories.size} RELEVANT MEMORIES (from ${memories.size} total)")
             relevantMemories.forEach { item ->
-                Log.d(TAG, "  📄 Memory (similarity: ${String.format("%.3f", item.similarity)}): ${item.text.take(50)}...")
+                Log.i(TAG, "  ✅ Memory (similarity: ${String.format("%.3f", item.similarity)}): \"${item.text.take(50)}...\"")
             }
             
             return@withContext relevantMemories
             
         } catch (e: Exception) {
             Log.e(TAG, "❌ Failed to retrieve memories", e)
+            e.printStackTrace()
             return@withContext emptyList()
         }
     }

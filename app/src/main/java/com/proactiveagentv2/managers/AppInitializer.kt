@@ -171,6 +171,11 @@ class AppInitializer(
         
         try {
             memoryManager = MemoryManager(context)
+            
+            // Connect memory manager to LLM manager for RAG context retrieval
+            llmManager?.setMemoryManager(memoryManager!!)
+            Log.d(TAG, "Memory system connected to LLM manager for RAG")
+            
             Log.d(TAG, "Memory system created successfully")
             Log.d(TAG, "Note: Memory system will be initialized asynchronously when first needed")
         } catch (e: Exception) {

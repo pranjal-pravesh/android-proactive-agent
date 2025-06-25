@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.proactiveagentv2.tools.ToolManager
+import com.proactiveagentv2.managers.MemoryManager
 import kotlinx.coroutines.*
 import java.io.File
 import java.io.FileOutputStream
@@ -108,6 +109,7 @@ class LLMManager(private val context: Context) {
     private val promptBuilder = PromptBuilder()
     private val toolManager = ToolManager()
     private val conversationHistory = mutableListOf<String>()
+    private var memoryManager: MemoryManager? = null
     
     // Performance tracking
     private var lastInferenceMetrics: InferenceMetrics? = null
@@ -576,11 +578,34 @@ class LLMManager(private val context: Context) {
             Log.i(TAG, "🔧 BUILDING PROMPT FOR USER INPUT: $userInput")
             Log.i(TAG, "📋 USING SYSTEM PROMPT (${if (useTools) "WITH TOOLS" else "BASIC"}): ${systemPrompt.take(150)}...")
             
+            // RAG: Retrieve relevant memories for context
+            val relevantMemories = if (includeContext && memoryManager != null) {
+                try {
+                    Log.d(TAG, "🧠 Retrieving relevant memories for query: ${userInput.take(50)}...")
+                    val memories = memoryManager!!.retrieveMemories(
+                        query = userInput,
+                        maxResults = 3,
+                        minSimilarity = 0.3f
+                    )
+                    Log.d(TAG, "📚 Found ${memories.size} relevant memories")
+                    memories.forEach { memory ->
+                        Log.d(TAG, "  📄 Memory (${String.format("%.3f", memory.similarity)}): ${memory.text.take(50)}...")
+                    }
+                    memories
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Error retrieving memories", e)
+                    emptyList()
+                }
+            } else {
+                emptyList()
+            }
+            
             val chatMLPrompt = promptBuilder.buildChatMLPrompt(
                 systemPrompt = systemPrompt,
                 userInput = userInput,
                 conversationHistory = if (includeContext) conversationHistory else emptyList(),
-                includeContext = includeContext
+                includeContext = includeContext,
+                relevantMemories = relevantMemories
             )
             
             Log.i(TAG, "📝 COMPLETE PROMPT LENGTH: ${chatMLPrompt.length} characters")
@@ -1126,6 +1151,14 @@ class LLMManager(private val context: Context) {
      * Get tool manager for external access
      */
     fun getToolManager(): ToolManager = toolManager
+    
+    /**
+     * Set memory manager for RAG context retrieval
+     */
+    fun setMemoryManager(manager: MemoryManager) {
+        this.memoryManager = manager
+        Log.d(TAG, "✅ Memory manager set for RAG context retrieval")
+    }
     
     /**
      * Handle LLM errors consistently for MediaPipe engines
