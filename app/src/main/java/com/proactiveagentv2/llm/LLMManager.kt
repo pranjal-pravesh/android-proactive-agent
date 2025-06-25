@@ -1113,4 +1113,23 @@ class LLMManager(private val context: Context) {
         
         return possiblePaths
     }
+    
+    /**
+     * Save GPU setting for a specific model
+     */
+    fun saveModelGPUSetting(modelId: String, useGPU: Boolean) {
+        val prefs = context.getSharedPreferences("llm_model_settings", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("gpu_$modelId", useGPU).apply()
+        Log.d(TAG, "Saved GPU setting for $modelId: $useGPU")
+    }
+    
+    /**
+     * Get GPU setting for a specific model, returns model default if not set
+     */
+    fun getModelGPUSetting(modelId: String): Boolean {
+        val prefs = context.getSharedPreferences("llm_model_settings", Context.MODE_PRIVATE)
+        val model = getAllAvailableModels().find { it.modelId == modelId }
+        val defaultValue = model?.defaultConfig?.useGPU ?: false
+        return prefs.getBoolean("gpu_$modelId", defaultValue)
+    }
 } 

@@ -394,11 +394,10 @@ private fun LLMModelSection(llmManager: LLMManager) {
     )}
     var downloadProgress by remember { mutableStateOf<DownloadProgress?>(null) }
     var isProcessing by remember { mutableStateOf(false) }
-    var showGpuSettings by remember { mutableStateOf(false) }
     
-    // Track GPU settings for each model
+    // Track GPU settings for each model - Load from persistent storage
     var modelGpuSettings by remember { mutableStateOf(
-        availableModels.associate { it.modelId to it.defaultConfig.useGPU }
+        availableModels.associate { it.modelId to llmManager.getModelGPUSetting(it.modelId) }
     )}
     
     Text(
@@ -528,97 +527,48 @@ private fun LLMModelSection(llmManager: LLMManager) {
                 }
             }
             
-            // GPU Settings info for models that will support it
+            // GPU Settings for models that support it
             if (selectedModel.supportsGPU) {
                 val gpuInfo = remember { llmManager.checkGPUCompatibility() }
                 val useGPU = modelGpuSettings[selectedModel.modelId] ?: selectedModel.defaultConfig.useGPU
                 
-                Card(
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (gpuInfo.isSupported) 
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
-                        else 
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    )
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = if (gpuInfo.isSupported) "GPU Acceleration" else "GPU Not Available",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = if (gpuInfo.isSupported) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-                                )
-                                if (gpuInfo.isSupported) {
-                                    val currentEngine = llmManager.getCurrentInferenceEngine()
-                                    val isCurrentModel = llmManager.getCurrentModel()?.modelId == selectedModel.modelId
-                                    val statusText = when {
-                                        !isCurrentModel -> "Ready for ${if (useGPU) "GPU" else "CPU"} acceleration"
-                                        currentEngine == com.proactiveagentv2.llm.InferenceEngine.MEDIAPIPE_GPU -> "🚀 GPU acceleration active"
-                                        currentEngine == com.proactiveagentv2.llm.InferenceEngine.MEDIAPIPE_CPU -> "🔧 MediaPipe CPU active"
-                                        else -> "🔧 MediaPipe CPU active"
-                                    }
-                                    Text(
-                                        text = statusText,
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontStyle = FontStyle.Italic
-                                    )
-                                }
-                            }
-                            Switch(
-                                checked = useGPU,
-                                onCheckedChange = { newValue ->
-                                    modelGpuSettings = modelGpuSettings.toMutableMap().apply {
-                                        put(selectedModel.modelId, newValue)
-                                    }
-                                },
-                                enabled = gpuInfo.isSupported
-                            )
-                        }
-                        
-                        Spacer(modifier = Modifier.height(8.dp))
-                        
-                        val currentEngine = llmManager.getCurrentInferenceEngine()
-                        val isCurrentModel = llmManager.getCurrentModel()?.modelId == selectedModel.modelId
-                        val performanceMetrics = llmManager.getLastInferenceMetrics()
-                        
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = if (gpuInfo.isSupported) {
-                                when {
-                                    !isCurrentModel && useGPU -> "GPU acceleration enabled. Will use MediaPipe GPU delegate when model is initialized."
-                                    !isCurrentModel && !useGPU -> "CPU-only mode selected."
-                                    isCurrentModel && currentEngine == com.proactiveagentv2.llm.InferenceEngine.MEDIAPIPE_GPU -> "🚀 GPU acceleration is ACTIVE! Using MediaPipe LLM API with GPU delegate."
-                                    isCurrentModel && currentEngine == com.proactiveagentv2.llm.InferenceEngine.MEDIAPIPE_CPU -> "🔧 Currently using MediaPipe CPU inference."
-                                    else -> "Configure GPU settings for this model."
-                                }
-                            } else {
-                                "GPU acceleration not supported on this device."
-                            },
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontStyle = FontStyle.Italic
+                            text = if (gpuInfo.isSupported) "GPU Acceleration" else "GPU Not Available",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (gpuInfo.isSupported) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
                         )
-                        
-                        // Show performance metrics if available and model is current
-                        if (isCurrentModel && performanceMetrics != null) {
-                            Spacer(modifier = Modifier.height(4.dp))
+                        if (gpuInfo.isSupported) {
                             Text(
-                                text = "⚡ Performance: ${String.format("%.1f", performanceMetrics.tokensPerSecond)} tokens/sec with ${performanceMetrics.inferenceEngine}",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontStyle = FontStyle.Italic
+                                text = if (useGPU) "Enabled" else "Disabled",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            Text(
+                                text = "Not supported on this device",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
+                    Switch(
+                        checked = useGPU,
+                        onCheckedChange = { newValue ->
+                            modelGpuSettings = modelGpuSettings.toMutableMap().apply {
+                                put(selectedModel.modelId, newValue)
+                            }
+                            // Save GPU setting immediately
+                            llmManager.saveModelGPUSetting(selectedModel.modelId, newValue)
+                        },
+                        enabled = gpuInfo.isSupported
+                    )
                 }
             }
             
