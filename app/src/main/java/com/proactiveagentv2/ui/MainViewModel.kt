@@ -26,12 +26,29 @@ data class AppState(
     val vadStatus: VadStatus = VadStatus(),
     val classificationStatus: ClassificationStatus = ClassificationStatus(),
     val selectedModelFile: File? = null,
-    val modelFiles: List<File> = emptyList()
+    val modelFiles: List<File> = emptyList(),
+    val isStreamingResponse: Boolean = false,
+    val streamingResponseText: String = "",
+    val streamingHasToolCalls: Boolean = false
+)
+
+data class StreamingMetrics(
+    val timeToFirstToken: Long = 0L, // milliseconds
+    val tokensPerSecond: Float = 0f,
+    val totalTokens: Int = 0,
+    val totalTimeMs: Long = 0L,
+    val isComplete: Boolean = false
 )
 
 class MainViewModel : ViewModel() {
     var appState by mutableStateOf(AppState())
         private set
+
+    // Track streaming state
+    private var streamingStartTime: Long = 0L
+    private var firstTokenTime: Long = 0L
+    private var currentStreamingResponse: String = ""
+    private var lastResponseMetrics: StreamingMetrics? = null
 
     fun updateStatus(status: String) {
         android.util.Log.d("MainViewModel", "Updating status to: $status")
@@ -108,5 +125,113 @@ class MainViewModel : ViewModel() {
         )
         
         appState = appState.copy(classificationStatus = classificationStatus)
+    }
+
+    /**
+     * Start a new streaming response
+     */
+    fun startStreamingResponse() {
+        android.util.Log.d("MainViewModel", "Starting streaming response")
+        streamingStartTime = System.currentTimeMillis()
+        firstTokenTime = 0L
+        currentStreamingResponse = ""
+        lastResponseMetrics = null
+        appState = appState.copy(
+            isStreamingResponse = true,
+            streamingResponseText = "",
+            streamingHasToolCalls = false
+        )
+    }
+    
+    /**
+     * Update streaming response with partial text
+     */
+    fun updateStreamingResponse(partialResponse: String, isComplete: Boolean, hasToolCalls: Boolean = false) {
+        android.util.Log.d("MainViewModel", "Updating streaming response: isComplete=$isComplete, length=${partialResponse.length}")
+        
+        // Record time to first token
+        if (firstTokenTime == 0L && partialResponse.isNotEmpty()) {
+            firstTokenTime = System.currentTimeMillis()
+            android.util.Log.d("MainViewModel", "First token received at ${firstTokenTime - streamingStartTime}ms")
+        }
+        
+        currentStreamingResponse = partialResponse
+        
+        if (isComplete) {
+            // Calculate final metrics
+            val totalTime = System.currentTimeMillis() - streamingStartTime
+            val timeToFirstToken = if (firstTokenTime > 0L) firstTokenTime - streamingStartTime else totalTime
+            val totalTokens = estimateTokenCount(partialResponse)
+            val tokensPerSecond = if (totalTime > 0) (totalTokens * 1000f) / totalTime else 0f
+            
+            lastResponseMetrics = StreamingMetrics(
+                timeToFirstToken = timeToFirstToken,
+                tokensPerSecond = tokensPerSecond,
+                totalTokens = totalTokens,
+                totalTimeMs = totalTime,
+                isComplete = true
+            )
+            
+            android.util.Log.d("MainViewModel", "Streaming complete - TTFT: ${timeToFirstToken}ms, TPS: ${"%.2f".format(tokensPerSecond)}, Tokens: $totalTokens")
+            
+            // Add final response to conversation
+            val formatted = if (partialResponse.isNotBlank()) {
+                if (hasToolCalls) "LLM_TOOL >> $partialResponse" else "LLM >> $partialResponse"
+            } else {
+                "LLM >> (no response)"
+            }
+            val newText = if (appState.transcriptionText.isEmpty()) {
+                formatted
+            } else {
+                "$formatted\n${appState.transcriptionText}"
+            }
+            
+            appState = appState.copy(
+                transcriptionText = newText,
+                isStreamingResponse = false,
+                streamingResponseText = "",
+                streamingHasToolCalls = false,
+                status = "LLM responded in ${totalTime}ms"
+            )
+        } else {
+            // Update streaming state without modifying transcription text
+            appState = appState.copy(
+                isStreamingResponse = true,
+                streamingResponseText = partialResponse,
+                streamingHasToolCalls = hasToolCalls,
+                status = "LLM is responding..."
+            )
+        }
+    }
+    
+    /**
+     * Get the current streaming metrics
+     */
+    fun getCurrentStreamingMetrics(): StreamingMetrics? {
+        return if (appState.isStreamingResponse) {
+            val currentTime = System.currentTimeMillis()
+            val timeToFirstToken = if (firstTokenTime > 0L) firstTokenTime - streamingStartTime else 0L
+            val totalTime = currentTime - streamingStartTime
+            val totalTokens = estimateTokenCount(currentStreamingResponse)
+            val tokensPerSecond = if (totalTime > 0 && totalTokens > 0) (totalTokens * 1000f) / totalTime else 0f
+            
+            StreamingMetrics(
+                timeToFirstToken = timeToFirstToken,
+                tokensPerSecond = tokensPerSecond,
+                totalTokens = totalTokens,
+                totalTimeMs = totalTime,
+                isComplete = false
+            )
+        } else {
+            lastResponseMetrics
+        }
+    }
+    
+    /**
+     * Estimate token count (rough approximation)
+     */
+    private fun estimateTokenCount(text: String): Int {
+        // Rough estimate: 1 token ≈ 4 characters for English text
+        return maxOf(1, text.length / 4)
     }
 } 

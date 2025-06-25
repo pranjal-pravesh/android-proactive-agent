@@ -866,33 +866,16 @@ class LLMManager(private val context: Context) {
         try {
             Log.d(TAG, "Generating streaming enhanced response for: $userInput using $currentInferenceEngine")
             
-            // For tool-enabled responses, we need to process synchronously for now
-            // due to MediaPipe LLM API limitations with streaming and tool calls
-            if (useTools) {
-                val response = generateEnhancedResponse(userInput, includeContext, useTools)
-                withContext(Dispatchers.Main) {
-                    onPartialResult(response.finalText, true, response.toolResults)
-                }
+            // Generate the complete response first (MediaPipe doesn't support real streaming yet)
+            val response = generateEnhancedResponse(userInput, includeContext, useTools)
+            
+            // Simulate streaming by sending partial text progressively
+            if (response.success && response.finalText.isNotBlank()) {
+                simulateStreamingResponse(response.finalText, response.toolResults, onPartialResult)
             } else {
-                // Simple streaming for non-tool responses using ChatML
-                val systemPrompt = promptBuilder.buildBasicSystemPrompt()
-                val chatMLPrompt = promptBuilder.buildChatMLPrompt(
-                    systemPrompt = systemPrompt,
-                    userInput = userInput,
-                    conversationHistory = if (includeContext) conversationHistory else emptyList(),
-                    includeContext = includeContext
-                )
-                
-                // Use MediaPipe with configured delegate
-                val result = generateWithMediaPipe(chatMLPrompt)
-                
                 withContext(Dispatchers.Main) {
-                    onPartialResult(result ?: "No response generated", true, emptyList())
+                    onPartialResult("I encountered an error while processing your request. Please try again.", true, emptyList())
                 }
-                
-                // Update conversation history
-                addToConversationHistory("User: $userInput")
-                addToConversationHistory("Assistant: ${result ?: ""}")
             }
             
         } catch (e: Exception) {
@@ -900,6 +883,49 @@ class LLMManager(private val context: Context) {
             handleLLMError(e)
             withContext(Dispatchers.Main) {
                 onPartialResult("I encountered an error while processing your request. Please try again.", true, emptyList())
+            }
+        }
+    }
+    
+    /**
+     * Simulate streaming response by progressively sending partial text
+     * Uses a single coroutine to avoid creating multiple threads
+     */
+    private suspend fun simulateStreamingResponse(
+        fullText: String,
+        toolResults: List<ToolResult>,
+        onPartialResult: (String, Boolean, List<ToolResult>) -> Unit
+    ) = withContext(Dispatchers.IO) {
+        try {
+            val words = fullText.split(" ")
+            val streamingDelayMs = 40L // Delay between words to simulate streaming
+            val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+            
+            var currentText = ""
+            
+            // Send words progressively in a single background coroutine
+            for ((index, word) in words.withIndex()) {
+                currentText += if (index == 0) word else " $word"
+                
+                // Post to main thread without creating new coroutine
+                mainHandler.post {
+                    onPartialResult(currentText, false, emptyList())
+                }
+                
+                // Add delay between words
+                delay(streamingDelayMs)
+            }
+            
+            // Send final complete response
+            mainHandler.post {
+                onPartialResult(fullText, true, toolResults)
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in streaming simulation", e)
+            val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+            mainHandler.post {
+                onPartialResult(fullText, true, toolResults)
             }
         }
     }

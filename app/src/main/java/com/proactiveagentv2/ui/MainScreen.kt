@@ -34,6 +34,7 @@ fun MainScreen(
     onClearClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onTextSubmit: ((String) -> Unit)? = null,
+    streamingMetrics: StreamingMetrics? = null,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -83,6 +84,8 @@ fun MainScreen(
         // Conversation Card (replaces transcription card)
         ConversationCard(
             conversationText = appState.transcriptionText,
+            appState = appState,
+            streamingMetrics = streamingMetrics,
             modifier = Modifier.fillMaxWidth().heightIn(min = 300.dp, max = 600.dp)
         )
         
@@ -468,6 +471,8 @@ private fun ClassificationChip(
 @Composable
 fun ConversationCard(
     conversationText: String,
+    appState: AppState,
+    streamingMetrics: StreamingMetrics? = null,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -540,11 +545,24 @@ fun ConversationCard(
                         }
                     }
                 } else {
-                    val messages = parseConversationMessages(conversationText)
+                    val messages = parseConversationMessages(conversationText, streamingMetrics).toMutableList()
+                    
+                    // Add streaming message if currently streaming
+                    if (appState.isStreamingResponse && appState.streamingResponseText.isNotEmpty()) {
+                        val streamingMessage = ConversationMessage(
+                            content = appState.streamingResponseText,
+                            isUser = false,
+                            hasToolCalls = appState.streamingHasToolCalls,
+                            streamingMetrics = streamingMetrics
+                        )
+                        // Add to the beginning (newest first)
+                        messages.add(0, streamingMessage)
+                    }
+                    
                     val listState = rememberLazyListState()
                     
                     // Auto-scroll to latest message when messages change
-                    LaunchedEffect(conversationText) {
+                    LaunchedEffect(conversationText, appState.streamingResponseText) {
                         if (messages.isNotEmpty()) {
                             // Small delay to let the UI update, then scroll to the top (newest message)
                             kotlinx.coroutines.delay(100)
@@ -575,7 +593,8 @@ data class ConversationMessage(
     val content: String,
     val isUser: Boolean,
     val hasToolCalls: Boolean = false,
-    val timestamp: String = ""
+    val timestamp: String = "",
+    val streamingMetrics: StreamingMetrics? = null
 )
 
 @Composable
@@ -630,6 +649,51 @@ private fun ConversationMessage(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
+                    
+                    // Show performance metrics below AI response
+                    message.streamingMetrics?.let { metrics ->
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(8.dp)
+                            ) {
+                                Text(
+                                    text = "⚡ Performance",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "TTFT: ${metrics.timeToFirstToken}ms",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                                    )
+                                    Text(
+                                        text = "${String.format("%.1f", metrics.tokensPerSecond)} tok/s",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                                    )
+                                }
+                                if (metrics.totalTokens > 0) {
+                                    Text(
+                                        text = "${metrics.totalTokens} tokens in ${metrics.totalTimeMs}ms",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         } else {
@@ -678,13 +742,13 @@ private fun ConversationMessage(
     }
 }
 
-private fun parseConversationMessages(conversationText: String): List<ConversationMessage> {
+private fun parseConversationMessages(conversationText: String, streamingMetrics: StreamingMetrics? = null): List<ConversationMessage> {
     if (conversationText.isBlank()) return emptyList()
     
     val messages = mutableListOf<ConversationMessage>()
     val lines = conversationText.split("\n")
     
-    for (line in lines) {
+    for ((index, line) in lines.withIndex()) {
         when {
             line.startsWith(">> ") -> {
                 // User input (transcription or text input)
@@ -697,14 +761,18 @@ private fun parseConversationMessages(conversationText: String): List<Conversati
                 // LLM response with tool calls
                 val content = line.removePrefix("LLM_TOOL >> ").trim()
                 if (content.isNotBlank() && content != "(no response)") {
-                    messages.add(ConversationMessage(content, isUser = false, hasToolCalls = true))
+                    // Add metrics to the most recent (first) AI response
+                    val metricsToShow = if (index == 0) streamingMetrics else null
+                    messages.add(ConversationMessage(content, isUser = false, hasToolCalls = true, streamingMetrics = metricsToShow))
                 }
             }
             line.startsWith("LLM >> ") -> {
                 // LLM response without tool calls
                 val content = line.removePrefix("LLM >> ").trim()
                 if (content.isNotBlank() && content != "(no response)") {
-                    messages.add(ConversationMessage(content, isUser = false, hasToolCalls = false))
+                    // Add metrics to the most recent (first) AI response
+                    val metricsToShow = if (index == 0) streamingMetrics else null
+                    messages.add(ConversationMessage(content, isUser = false, hasToolCalls = false, streamingMetrics = metricsToShow))
                 }
             }
         }

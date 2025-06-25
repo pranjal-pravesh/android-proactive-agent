@@ -224,7 +224,8 @@ class MainActivity : ComponentActivity() {
                         onSettingsClick = { uiCoordinator.handleSettingsButtonClick() },
                         onTextSubmit = { text -> 
                             transcriptionManager.processTextInput(text)
-                        }
+                        },
+                        streamingMetrics = composeViewModel.getCurrentStreamingMetrics()
                     )
                     
                     // Settings Dialog

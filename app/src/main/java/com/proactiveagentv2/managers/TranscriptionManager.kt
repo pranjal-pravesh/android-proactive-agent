@@ -265,70 +265,60 @@ class TranscriptionManager(
             
             coroutineScope.launch {
                 try {
-                    Log.d(TAG, "Submitting transcription to enhanced LLM: \"$transcriptionText\"")
-                    val startTime = System.currentTimeMillis()
+                    Log.d(TAG, "Submitting transcription to streaming enhanced LLM: \"$transcriptionText\"")
                     
-                    // Use enhanced LLM with tool support
-                    val llmResponse = llm.generateEnhancedResponse(
+                    // Start streaming response in UI
+                    withContext(Dispatchers.Main) {
+                        viewModel.startStreamingResponse()
+                    }
+                    
+                    // Use streaming enhanced LLM with tool support
+                    llm.generateStreamingEnhancedResponse(
                         userInput = transcriptionText,
                         includeContext = true,
                         useTools = true
-                    )
-                    
-                    val duration = System.currentTimeMillis() - startTime
-                    
-                    withContext(Dispatchers.Main) {
-                        if (llmResponse.success && llmResponse.finalText.isNotBlank()) {
+                    ) { partialText, isComplete, toolResults ->
+                        // Update UI with streaming response
+                        viewModel.updateStreamingResponse(
+                            partialResponse = partialText,
+                            isComplete = isComplete,
+                            hasToolCalls = toolResults.isNotEmpty()
+                        )
+                        
+                        // When complete, use TTS and log details
+                        if (isComplete) {
+                            Log.d(TAG, "Streaming LLM response completed: \"$partialText\"")
+                            
                             // Log tool usage if any
-                            if (llmResponse.hasToolCalls) {
-                                Log.d(TAG, "LLM used ${llmResponse.toolResults.size} tools: ${llmResponse.toolResults.map { it.toolName }}")
-                                llmResponse.toolResults.forEach { toolResult ->
+                            if (toolResults.isNotEmpty()) {
+                                Log.d(TAG, "LLM used ${toolResults.size} tools: ${toolResults.map { it.toolName }}")
+                                toolResults.forEach { toolResult ->
                                     Log.d(TAG, "Tool ${toolResult.toolName}: ${if (toolResult.success) "SUCCESS" else "FAILED"}")
                                 }
-                            }
-                            
-                            viewModel.appendLLMResponse(llmResponse.finalText, duration, llmResponse.hasToolCalls)
-                            Log.d(TAG, "Enhanced LLM response received (${duration}ms): \"${llmResponse.finalText}\"")
-                            
-                            // Use TTS to read the response aloud
-                            ttsManager?.speak(llmResponse.finalText)
-                            
-                            // Show tool results in logs for debugging
-                            if (llmResponse.toolResults.isNotEmpty()) {
-                                llmResponse.toolResults.forEach { result ->
+                                
+                                // Show tool results in logs for debugging
+                                toolResults.forEach { result ->
                                     Log.d(TAG, "Tool result - ${result.toolName}: ${result.result}")
                                 }
                             }
-                        } else {
-                            Log.w(TAG, "Enhanced LLM response failed or empty: ${llmResponse.error}")
                             
-                            // Fallback to basic response if enhanced fails
-                            val fallbackResponse = llm.generateResponse(transcriptionText) ?: ""
-                            if (fallbackResponse.isNotBlank()) {
-                                viewModel.appendLLMResponse(fallbackResponse, duration, false)
-                                ttsManager?.speak(fallbackResponse)
-                                Log.d(TAG, "Fallback LLM response used: \"$fallbackResponse\"")
-                            }
+                            // Use TTS to read the response aloud
+                            ttsManager?.speak(partialText)
                         }
                     }
+                    
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error submitting to enhanced LLM", e)
+                    Log.e(TAG, "Error submitting to streaming enhanced LLM", e)
                     // Don't crash the app, just log the error
                     withContext(Dispatchers.Main) {
-                        Log.w(TAG, "Enhanced LLM processing failed for: \"$transcriptionText\"")
+                        Log.w(TAG, "Streaming LLM processing failed for: \"$transcriptionText\"")
                         
-                        // Try basic LLM as fallback
-                        try {
-                            coroutineScope.launch {
-                                val fallbackResponse = llm.generateResponse(transcriptionText) ?: ""
-                                if (fallbackResponse.isNotBlank()) {
-                                    viewModel.appendLLMResponse(fallbackResponse, 0, false)
-                                    Log.d(TAG, "Fallback response used after error")
-                                }
-                            }
-                        } catch (fallbackError: Exception) {
-                            Log.e(TAG, "Even fallback LLM failed", fallbackError)
-                        }
+                        // Complete streaming with error response
+                        viewModel.updateStreamingResponse(
+                            partialResponse = "I encountered an error while processing your request. Please try again.",
+                            isComplete = true,
+                            hasToolCalls = false
+                        )
                     }
                 }
             }
