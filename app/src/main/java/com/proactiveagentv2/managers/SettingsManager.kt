@@ -129,7 +129,11 @@ class SettingsManager(
             
             if (success) {
                 viewModel.selectModelFile(newModel)
-                Log.d(TAG, "Model successfully changed to: ${newModel.name}")
+                
+                // PERFORMANCE FIX: Optimize VAD for the new model size
+                vadManager?.optimizeForWhisperModel(newModel.name)
+                
+                Log.d(TAG, "Model successfully changed to: ${newModel.name} with VAD optimization")
                 true
             } else {
                 // Rollback on failure

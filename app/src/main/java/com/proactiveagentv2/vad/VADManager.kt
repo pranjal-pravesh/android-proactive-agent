@@ -14,8 +14,8 @@ class VADManager(context: Context) {
     
     // VAD parameters - made mutable for settings (similar to Python's configurable thresholds)
     var speechThreshold = 0.5f
-    var silenceThreshold = 0.3f
-    var minSpeechDurationMs = 300L // Minimum speech duration to consider as valid speech
+    var silenceThreshold = 0.5f
+    var minSpeechDurationMs = 100L // Minimum speech duration to consider as valid speech
     var maxSilenceDurationMs = 1000L // Maximum silence before considering speech ended (like Python's 1 second timeout)
     
     // Audio constants
@@ -279,6 +279,28 @@ class VADManager(context: Context) {
     fun isInitialized(): Boolean = vadProcessor.isInitialized()
     
     fun isSpeechActive(): Boolean = isSpeechDetected
+    
+    /**
+     * Optimize VAD performance for different Whisper model sizes
+     * Larger models need more frequent VAD resets to prevent ONNX slowdown
+     */
+    fun optimizeForWhisperModel(modelFileName: String?) {
+        val modelSize = detectWhisperModelSize(modelFileName)
+        vadProcessor.adjustResetFrequency(modelSize)
+        Log.i(TAG, "VAD optimized for Whisper model: $modelFileName (detected: ${modelSize.name})")
+    }
+    
+    private fun detectWhisperModelSize(modelFileName: String?): SileroVADProcessor.WhisperModelSize {
+        return when {
+            modelFileName == null -> SileroVADProcessor.WhisperModelSize.UNKNOWN
+            modelFileName.contains("tiny", ignoreCase = true) -> SileroVADProcessor.WhisperModelSize.TINY
+            modelFileName.contains("base", ignoreCase = true) -> SileroVADProcessor.WhisperModelSize.BASE
+            modelFileName.contains("small", ignoreCase = true) -> SileroVADProcessor.WhisperModelSize.SMALL
+            modelFileName.contains("medium", ignoreCase = true) -> SileroVADProcessor.WhisperModelSize.MEDIUM
+            modelFileName.contains("large", ignoreCase = true) -> SileroVADProcessor.WhisperModelSize.LARGE
+            else -> SileroVADProcessor.WhisperModelSize.UNKNOWN
+        }
+    }
     
     companion object {
         private const val TAG = "VADManager"

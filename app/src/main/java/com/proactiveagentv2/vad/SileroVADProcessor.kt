@@ -16,6 +16,9 @@ class SileroVADProcessor(private val context: Context) {
     // Simple processing counter for periodic state reset
     private var processingCount = 0
     
+    // Adaptive reset frequency based on system memory pressure
+    private var resetFrequency = 2000 // Default: every 2000 chunks (~64 seconds)
+    
     // VAD parameters
     private val sampleRate = 16000
     private val windowSizeSamples = 512 // 32ms at 16kHz
@@ -68,6 +71,29 @@ class SileroVADProcessor(private val context: Context) {
         processingCount = 0
     }
     
+    /**
+     * Adjust VAD reset frequency based on system memory pressure
+     * Call this when Whisper model changes to optimize VAD performance
+     */
+    fun adjustResetFrequency(whisperModelSize: WhisperModelSize) {
+        resetFrequency = when (whisperModelSize) {
+            WhisperModelSize.TINY -> 1000      // ~32 seconds (original frequency)
+            WhisperModelSize.BASE -> 300       
+            WhisperModelSize.SMALL -> 200      
+            WhisperModelSize.MEDIUM -> 200     
+            WhisperModelSize.LARGE -> 200      
+            WhisperModelSize.UNKNOWN -> 500   
+        }
+        Log.i(TAG, "🎯 VAD reset frequency adjusted to $resetFrequency chunks (~${resetFrequency * 32 / 1000}s) for ${whisperModelSize.name} model")
+        
+        // Reset immediately to start fresh
+        resetState()
+    }
+    
+    enum class WhisperModelSize {
+        TINY, BASE, SMALL, MEDIUM, LARGE, UNKNOWN
+    }
+    
     fun processAudio(audioChunk: FloatArray): Float {
         if (audioChunk.size != windowSizeSamples) {
             return 0f
@@ -77,8 +103,9 @@ class SileroVADProcessor(private val context: Context) {
         processingCount++
         
         // MEMORY FIX: Periodically reset state to prevent ONNX accumulation
-        // Every 2000 chunks (~64 seconds) to avoid any state buildup
-        if (processingCount % 2000 == 0) {
+        // Frequency adapts based on system memory pressure (more frequent when larger models loaded)
+        if (processingCount % resetFrequency == 0) {
+            Log.d(TAG, "🔄 VAD state reset at chunk $processingCount (every $resetFrequency chunks)")
             resetState()
         }
         

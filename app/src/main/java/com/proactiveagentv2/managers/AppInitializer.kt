@@ -199,7 +199,11 @@ class AppInitializer(
             selectedModelFile = modelFile
             viewModel.selectModelFile(modelFile)
             
-            Log.d(TAG, "STT model initialized successfully")
+            // PERFORMANCE FIX: Optimize VAD reset frequency based on Whisper model size
+            // Larger models need more frequent VAD resets to prevent ONNX slowdown
+            vadManager?.optimizeForWhisperModel(modelFile.name)
+            
+            Log.d(TAG, "STT model initialized successfully with VAD optimization")
             true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize STT model", e)
