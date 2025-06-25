@@ -12,6 +12,7 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -19,6 +20,7 @@ import com.proactiveagentv2.managers.*
 import com.proactiveagentv2.ui.MainScreen
 import com.proactiveagentv2.ui.MainViewModel
 import com.proactiveagentv2.ui.SettingsDialog
+import com.proactiveagentv2.ui.ConversationHistoryDialog
 import com.proactiveagentv2.ui.theme.WhisperNativeTheme
 
 /**
@@ -237,8 +239,43 @@ class MainActivity : ComponentActivity() {
                         onDismiss = { uiCoordinator.handleSettingsDialogDismiss() },
                         onSaveSettings = { newSettings ->
                             uiCoordinator.handleSettingsSave(newSettings)
+                        },
+                        onManageConversationHistory = {
+                            composeViewModel.showConversationHistoryDialog()
                         }
                     )
+                    
+                    // Conversation History Dialog
+                    if (composeViewModel.appState.showConversationHistoryDialog) {
+                        val llmManager = appInitializer.llmManager
+                        if (llmManager != null) {
+                            // Use remember to create reactive state
+                            var conversationHistory by remember { mutableStateOf(llmManager.getConversationHistory()) }
+                            var contextLength by remember { mutableStateOf(llmManager.getContextLength()) }
+                            var saveHistoryEnabled by remember { mutableStateOf(llmManager.isSaveHistoryEnabled()) }
+                            
+                            ConversationHistoryDialog(
+                                onDismiss = { composeViewModel.hideConversationHistoryDialog() },
+                                conversationHistory = conversationHistory,
+                                contextLength = contextLength,
+                                onContextLengthChange = { length ->
+                                    llmManager.setContextLength(length)
+                                    contextLength = length
+                                    conversationHistory = llmManager.getConversationHistory() // Refresh if trimmed
+                                },
+                                saveHistoryEnabled = saveHistoryEnabled,
+                                onSaveHistoryToggle = { enabled ->
+                                    llmManager.setSaveHistoryEnabled(enabled)
+                                    saveHistoryEnabled = enabled
+                                },
+                                onClearHistory = {
+                                    llmManager.clearConversationHistory()
+                                    conversationHistory = emptyList()
+                                    composeViewModel.hideConversationHistoryDialog()
+                                }
+                            )
+                        }
+                    }
                 }
             }
         }

@@ -29,7 +29,8 @@ data class AppState(
     val modelFiles: List<File> = emptyList(),
     val isStreamingResponse: Boolean = false,
     val streamingResponseText: String = "",
-    val streamingHasToolCalls: Boolean = false
+    val streamingHasToolCalls: Boolean = false,
+    val showConversationHistoryDialog: Boolean = false
 )
 
 data class StreamingMetrics(
@@ -233,5 +234,21 @@ class MainViewModel : ViewModel() {
     private fun estimateTokenCount(text: String): Int {
         // Rough estimate: 1 token ≈ 4 characters for English text
         return maxOf(1, text.length / 4)
+    }
+    
+    /**
+     * Show conversation history dialog
+     */
+    fun showConversationHistoryDialog() {
+        android.util.Log.d("MainViewModel", "Showing conversation history dialog")
+        appState = appState.copy(showConversationHistoryDialog = true)
+    }
+    
+    /**
+     * Hide conversation history dialog
+     */
+    fun hideConversationHistoryDialog() {
+        android.util.Log.d("MainViewModel", "Hiding conversation history dialog")
+        appState = appState.copy(showConversationHistoryDialog = false)
     }
 } 

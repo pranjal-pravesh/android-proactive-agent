@@ -45,7 +45,8 @@ fun SettingsDialog(
     availableModels: List<File> = emptyList(),
     llmManager: LLMManager? = null,
     onDismiss: () -> Unit,
-    onSaveSettings: (SettingsState) -> Unit
+    onSaveSettings: (SettingsState) -> Unit,
+    onManageConversationHistory: () -> Unit = {}
 ) {
     if (!isVisible) return
 
@@ -311,6 +312,11 @@ fun SettingsDialog(
                             onValueChange = { localSettings = localSettings.copy(ttsPitch = it) }
                         )
                     }
+
+                    Divider()
+
+                    // Conversation History Management Section
+                    ConversationHistorySettingsSection(onManageHistoryClick = onManageConversationHistory)
 
                     // Add some bottom padding to ensure content doesn't hide behind buttons
                     Spacer(modifier = Modifier.height(16.dp))
@@ -738,4 +744,37 @@ private fun LLMModelSection(llmManager: LLMManager) {
             )
         }
     }
+}
+
+@Composable
+private fun ConversationHistorySettingsSection(
+    onManageHistoryClick: () -> Unit
+) {
+    Text(
+        text = "Conversation History",
+        fontSize = 16.sp,
+        fontWeight = FontWeight.Medium,
+        color = MaterialTheme.colorScheme.primary
+    )
+    
+    // Manage History Button
+    OutlinedButton(
+        onClick = onManageHistoryClick,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Icon(
+            Icons.Default.History,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text("Manage Conversation History")
+    }
+    
+    Text(
+        text = "View, configure and clear conversation history",
+        fontSize = 12.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        fontStyle = FontStyle.Italic
+    )
 }

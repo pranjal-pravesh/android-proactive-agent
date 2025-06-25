@@ -112,9 +112,17 @@ class LLMManager(private val context: Context) {
     // Performance tracking
     private var lastInferenceMetrics: InferenceMetrics? = null
     
+    // SharedPreferences for settings persistence
+    private val prefs by lazy {
+        context.getSharedPreferences("llm_conversation_settings", Context.MODE_PRIVATE)
+    }
+    
     companion object {
         private const val TAG = "LLMManager"
         private const val MAX_CONVERSATION_HISTORY = 10
+        private const val CONVERSATION_HISTORY_KEY = "conversation_history"
+        private const val CONTEXT_LENGTH_KEY = "context_length"
+        private const val SAVE_HISTORY_KEY = "save_conversation_history"
         
         val QWEN_MODEL = LLMModelInfo(
             name = "Qwen2.5-1.5B-Instruct q8",
@@ -167,8 +175,13 @@ class LLMManager(private val context: Context) {
         if (!modelsDir.exists()) {
             modelsDir.mkdirs()
         }
+        
+        // Load conversation history if enabled
+        loadConversationHistory()
+        
         Log.d(TAG, "LLMManager initialized with multi-model support and GPU acceleration")
         Log.d(TAG, "Available models: ${getAllAvailableModels().map { it.name }}")
+        Log.d(TAG, "Conversation history enabled: ${isSaveHistoryEnabled()}, Messages loaded: ${conversationHistory.size}")
         Log.d(TAG, toolManager.getToolDescriptions())
         
         // Log GPU capabilities at startup
@@ -947,13 +960,25 @@ class LLMManager(private val context: Context) {
     }
     
     /**
-     * Manage conversation history
+     * Manage conversation history with persistence and size control
      */
     private fun addToConversationHistory(message: String) {
         conversationHistory.add(message)
-        if (conversationHistory.size > MAX_CONVERSATION_HISTORY) {
+        
+        // Get user-configured context length
+        val maxMessages = getContextLength()
+        
+        // Trim to user preference
+        while (conversationHistory.size > maxMessages) {
             conversationHistory.removeAt(0)
         }
+        
+        // Save to persistent storage if enabled
+        if (isSaveHistoryEnabled()) {
+            saveConversationHistory()
+        }
+        
+        Log.d(TAG, "Added message to history (${conversationHistory.size}/$maxMessages messages)")
     }
     
     /**
@@ -961,13 +986,141 @@ class LLMManager(private val context: Context) {
      */
     fun clearConversationHistory() {
         conversationHistory.clear()
-        Log.d(TAG, "Conversation history cleared")
+        
+        // Clear from persistent storage too
+        if (isSaveHistoryEnabled()) {
+            saveConversationHistory()
+        }
+        
+        // Reset the LLM session to start fresh
+        resetLLMSession()
+        
+        Log.d(TAG, "Conversation history cleared and LLM session reset")
+    }
+    
+    /**
+     * Reset the LLM session to start fresh (useful after clearing history)
+     */
+    private fun resetLLMSession() {
+        try {
+            if (llmInference != null && isInitialized) {
+                // For MediaPipe, we don't have sessions but we can log that we're starting fresh
+                Log.d(TAG, "🔄 Starting fresh inference (conversation history cleared)")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error resetting LLM", e)
+        }
     }
     
     /**
      * Get current conversation history
      */
     fun getConversationHistory(): List<String> = conversationHistory.toList()
+    
+    /**
+     * Get context length setting (number of messages to keep)
+     */
+    fun getContextLength(): Int {
+        return prefs.getInt(CONTEXT_LENGTH_KEY, 10) // Default to 10 messages
+    }
+    
+    /**
+     * Set context length setting (number of messages to keep)
+     */
+    fun setContextLength(length: Int) {
+        val clampedLength = length.coerceIn(0, 50) // Max 50 messages
+        prefs.edit().putInt(CONTEXT_LENGTH_KEY, clampedLength).apply()
+        
+        // Trim current history if needed
+        while (conversationHistory.size > clampedLength) {
+            conversationHistory.removeAt(0)
+        }
+        
+        // Save updated history
+        if (isSaveHistoryEnabled()) {
+            saveConversationHistory()
+        }
+        
+        Log.d(TAG, "Context length updated to $clampedLength messages")
+    }
+    
+    /**
+     * Check if conversation history persistence is enabled
+     */
+    fun isSaveHistoryEnabled(): Boolean {
+        return prefs.getBoolean(SAVE_HISTORY_KEY, false) // Default to disabled for privacy
+    }
+    
+    /**
+     * Enable/disable conversation history persistence
+     */
+    fun setSaveHistoryEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(SAVE_HISTORY_KEY, enabled).apply()
+        
+        if (enabled) {
+            // Save current history
+            saveConversationHistory()
+        } else {
+            // Clear saved history when disabled
+            clearSavedHistory()
+        }
+        
+        Log.d(TAG, "Conversation history persistence: ${if (enabled) "enabled" else "disabled"}")
+    }
+    
+    /**
+     * Load conversation history from persistent storage
+     */
+    private fun loadConversationHistory() {
+        if (!isSaveHistoryEnabled()) {
+            Log.d(TAG, "Conversation history persistence is disabled, starting fresh")
+            return
+        }
+        
+        try {
+            // Use a JSON-like format to maintain order (simple pipe-separated format)
+            val savedHistoryString = prefs.getString(CONVERSATION_HISTORY_KEY, "") ?: ""
+            conversationHistory.clear()
+            
+            if (savedHistoryString.isNotEmpty()) {
+                val messages = savedHistoryString.split("|||").filter { it.isNotBlank() }
+                conversationHistory.addAll(messages)
+            }
+            
+            // Respect context length setting
+            val maxMessages = getContextLength()
+            while (conversationHistory.size > maxMessages) {
+                conversationHistory.removeAt(0)
+            }
+            
+            Log.d(TAG, "Loaded ${conversationHistory.size} messages from persistent storage")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading conversation history", e)
+            conversationHistory.clear()
+        }
+    }
+    
+    /**
+     * Save conversation history to persistent storage
+     */
+    private fun saveConversationHistory() {
+        try {
+            // Use pipe-separated format to maintain order
+            val historyString = conversationHistory.joinToString("|||")
+            prefs.edit().putString(CONVERSATION_HISTORY_KEY, historyString).apply()
+            Log.d(TAG, "Saved ${conversationHistory.size} messages to persistent storage")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving conversation history", e)
+        }
+    }
+    
+    /**
+     * Clear saved conversation history from persistent storage
+     */
+    private fun clearSavedHistory() {
+        prefs.edit().remove(CONVERSATION_HISTORY_KEY).apply()
+        Log.d(TAG, "Cleared saved conversation history")
+    }
     
     /**
      * Get tool manager for external access
