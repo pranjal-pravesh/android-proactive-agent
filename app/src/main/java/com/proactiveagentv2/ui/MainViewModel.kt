@@ -30,7 +30,8 @@ data class AppState(
     val isStreamingResponse: Boolean = false,
     val streamingResponseText: String = "",
     val streamingHasToolCalls: Boolean = false,
-    val showConversationHistoryDialog: Boolean = false
+    val showConversationHistoryDialog: Boolean = false,
+    val showMemoryDialog: Boolean = false
 )
 
 data class StreamingMetrics(
@@ -250,5 +251,21 @@ class MainViewModel : ViewModel() {
     fun hideConversationHistoryDialog() {
         android.util.Log.d("MainViewModel", "Hiding conversation history dialog")
         appState = appState.copy(showConversationHistoryDialog = false)
+    }
+    
+    /**
+     * Show memory dialog
+     */
+    fun showMemoryDialog() {
+        android.util.Log.d("MainViewModel", "Showing memory dialog")
+        appState = appState.copy(showMemoryDialog = true)
+    }
+    
+    /**
+     * Hide memory dialog
+     */
+    fun hideMemoryDialog() {
+        android.util.Log.d("MainViewModel", "Hiding memory dialog")
+        appState = appState.copy(showMemoryDialog = false)
     }
 } 

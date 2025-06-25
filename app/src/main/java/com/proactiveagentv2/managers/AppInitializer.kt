@@ -38,6 +38,8 @@ class AppInitializer(
         private set
     var classifierManager: ClassifierManager? = null
         private set
+    var memoryManager: MemoryManager? = null
+        private set
     
     // Model management
     var selectedModelFile: File? = null
@@ -53,6 +55,7 @@ class AppInitializer(
             initializeVADSystem()
             initializeLLMSystem()
             initializeClassifierSystem()
+            initializeMemorySystem()
             
             Log.d(TAG, "=== Application initialization completed successfully ===")
             InitializationResult.Success
@@ -163,6 +166,20 @@ class AppInitializer(
         }
     }
     
+    private fun initializeMemorySystem() {
+        Log.d(TAG, "Initializing RAG Memory system...")
+        
+        try {
+            memoryManager = MemoryManager(context)
+            Log.d(TAG, "Memory system created successfully")
+            Log.d(TAG, "Note: Memory system will be initialized asynchronously when first needed")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating memory system", e)
+            memoryManager = null
+            Log.w(TAG, "Memory functionality will be disabled")
+        }
+    }
+    
     fun initializeSTTModel(modelFile: File): Boolean {
         return try {
             Log.d(TAG, "Initializing STT model: ${modelFile.name}")
@@ -200,6 +217,9 @@ class AppInitializer(
         modelManager?.release()
         modelManager = null
         llmManager = null
+        
+        memoryManager?.release()
+        memoryManager = null
         
         classifierManager?.release()
         classifierManager = null

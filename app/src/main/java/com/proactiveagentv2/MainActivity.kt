@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -21,6 +23,7 @@ import com.proactiveagentv2.ui.MainScreen
 import com.proactiveagentv2.ui.MainViewModel
 import com.proactiveagentv2.ui.SettingsDialog
 import com.proactiveagentv2.ui.ConversationHistoryDialog
+import com.proactiveagentv2.ui.MemoryDialog
 import com.proactiveagentv2.ui.theme.WhisperNativeTheme
 
 /**
@@ -104,7 +107,8 @@ class MainActivity : ComponentActivity() {
             dataFolder = getExternalFilesDir(null)!!,
             llmManager = appInitializer.llmManager,
             classifierManager = classifierManager,
-            ttsManager = ttsManager
+            ttsManager = ttsManager,
+            memoryManager = appInitializer.memoryManager
         )
         
         // Initialize classifier manager
@@ -242,6 +246,9 @@ class MainActivity : ComponentActivity() {
                         },
                         onManageConversationHistory = {
                             composeViewModel.showConversationHistoryDialog()
+                        },
+                        onManageMemory = {
+                            composeViewModel.showMemoryDialog()
                         }
                     )
                     
@@ -272,6 +279,49 @@ class MainActivity : ComponentActivity() {
                                     llmManager.clearConversationHistory()
                                     conversationHistory = emptyList()
                                     composeViewModel.hideConversationHistoryDialog()
+                                }
+                            )
+                        }
+                    }
+                    
+                    // Memory Dialog
+                    if (composeViewModel.appState.showMemoryDialog) {
+                        val memoryManager = appInitializer.memoryManager
+                        if (memoryManager != null) {
+                            var memories by remember { mutableStateOf(emptyList<com.proactiveagentv2.managers.MemoryItem>()) }
+                            var memoryStats by remember { mutableStateOf(com.proactiveagentv2.managers.MemoryStats(0, 0L, 0L, false)) }
+                            var searchQuery by remember { mutableStateOf("") }
+                            
+                            // Initialize memory system and load memories
+                            LaunchedEffect(Unit) {
+                                if (!memoryStats.isInitialized) {
+                                    memoryManager.initialize()
+                                }
+                                memoryStats = memoryManager.getMemoryStats()
+                                memories = memoryManager.getAllMemories()
+                            }
+                            
+                            MemoryDialog(
+                                onDismiss = { composeViewModel.hideMemoryDialog() },
+                                memories = memories,
+                                memoryStats = memoryStats,
+                                onClearMemories = {
+                                    lifecycleScope.launch {
+                                        memoryManager.clearAllMemories()
+                                        memories = emptyList()
+                                        memoryStats = memoryManager.getMemoryStats()
+                                        composeViewModel.hideMemoryDialog()
+                                    }
+                                },
+                                onSearchMemories = { query ->
+                                    searchQuery = query
+                                    lifecycleScope.launch {
+                                        memories = if (query.isBlank()) {
+                                            memoryManager.getAllMemories()
+                                        } else {
+                                            memoryManager.retrieveMemories(query, maxResults = 50)
+                                        }
+                                    }
                                 }
                             )
                         }

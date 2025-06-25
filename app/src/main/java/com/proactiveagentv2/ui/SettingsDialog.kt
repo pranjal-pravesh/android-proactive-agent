@@ -46,7 +46,8 @@ fun SettingsDialog(
     llmManager: LLMManager? = null,
     onDismiss: () -> Unit,
     onSaveSettings: (SettingsState) -> Unit,
-    onManageConversationHistory: () -> Unit = {}
+    onManageConversationHistory: () -> Unit = {},
+    onManageMemory: () -> Unit = {}
 ) {
     if (!isVisible) return
 
@@ -317,6 +318,11 @@ fun SettingsDialog(
 
                     // Conversation History Management Section
                     ConversationHistorySettingsSection(onManageHistoryClick = onManageConversationHistory)
+                    
+                    Divider()
+                    
+                    // Memory Management Section
+                    MemoryManagementSection(onManageMemoryClick = onManageMemory)
 
                     // Add some bottom padding to ensure content doesn't hide behind buttons
                     Spacer(modifier = Modifier.height(16.dp))
@@ -773,6 +779,39 @@ private fun ConversationHistorySettingsSection(
     
     Text(
         text = "View, configure and clear conversation history",
+        fontSize = 12.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        fontStyle = FontStyle.Italic
+    )
+}
+
+@Composable
+private fun MemoryManagementSection(
+    onManageMemoryClick: () -> Unit
+) {
+    Text(
+        text = "RAG Memory Storage",
+        fontSize = 16.sp,
+        fontWeight = FontWeight.Medium,
+        color = MaterialTheme.colorScheme.primary
+    )
+    
+    // Manage Memory Button
+    OutlinedButton(
+        onClick = onManageMemoryClick,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Icon(
+            Icons.Default.Memory,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text("Manage Memory Storage")
+    }
+    
+    Text(
+        text = "View stored memories from CONTEXTABLE transcriptions",
         fontSize = 12.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         fontStyle = FontStyle.Italic

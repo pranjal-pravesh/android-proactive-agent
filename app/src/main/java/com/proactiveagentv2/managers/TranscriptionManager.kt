@@ -30,6 +30,7 @@ class TranscriptionManager(
     private var llmManager: LLMManager? = null
     private var classifierManager: ClassifierManager? = null
     private var ttsManager: TTSManager? = null
+    private var memoryManager: MemoryManager? = null
     private val handler = Handler(Looper.getMainLooper())
     
     // Transcription state
@@ -39,12 +40,13 @@ class TranscriptionManager(
     // Callbacks
     var onTranscriptionComplete: ((segmentFile: File) -> Unit)? = null
     
-    fun initialize(whisper: Whisper, dataFolder: File, llmManager: LLMManager? = null, classifierManager: ClassifierManager? = null, ttsManager: TTSManager? = null) {
+    fun initialize(whisper: Whisper, dataFolder: File, llmManager: LLMManager? = null, classifierManager: ClassifierManager? = null, ttsManager: TTSManager? = null, memoryManager: MemoryManager? = null) {
         this.whisper = whisper
         this.sdcardDataFolder = dataFolder
         this.llmManager = llmManager
         this.classifierManager = classifierManager
         this.ttsManager = ttsManager
+        this.memoryManager = memoryManager
         
         setupWhisperListener()
         
@@ -80,6 +82,15 @@ class TranscriptionManager(
                         
                         // Check if text is actionable before submitting to LLM
                         val isActionable = classifierManager?.isTextActionable(result) ?: true // Default to true if classifier not available
+                        
+                        // Check if text is contextable for memory storage
+                        val isContextable = classifierManager?.isTextContextable(result) ?: false
+                        
+                        // Store contextable text in memory (async)
+                        if (isContextable) {
+                            Log.d(TAG, "Text classified as contextable, storing in memory: \"$result\"")
+                            storeInMemory(result)
+                        }
                         
                         if (isActionable) {
                             Log.d(TAG, "Text classified as actionable, submitting to LLM: \"$result\"")
@@ -225,6 +236,15 @@ class TranscriptionManager(
                     // Check if text is actionable before submitting to LLM
                     val isActionable = classifierManager?.isTextActionable(text) ?: true // Default to true if classifier not available
                     
+                    // Check if text is contextable for memory storage
+                    val isContextable = classifierManager?.isTextContextable(text) ?: false
+                    
+                    // Store contextable text in memory (async)
+                    if (isContextable) {
+                        Log.d(TAG, "Text input classified as contextable, storing in memory: \"$text\"")
+                        storeInMemory(text)
+                    }
+                    
                     if (isActionable) {
                         Log.d(TAG, "Text input classified as actionable, submitting to LLM: \"$text\"")
                         submitToLLM(text)
@@ -354,6 +374,40 @@ class TranscriptionManager(
     private sealed class TranscriptionResult {
         data class Success(val segmentFile: File) : TranscriptionResult()
         data class Error(val message: String) : TranscriptionResult()
+    }
+    
+    /**
+     * Store transcription in memory for RAG retrieval
+     */
+    private fun storeInMemory(transcription: String) {
+        memoryManager?.let { manager ->
+            coroutineScope.launch {
+                try {
+                    // Initialize memory system if not already done
+                    if (!manager.getMemoryStats().isInitialized) {
+                        Log.d(TAG, "Initializing memory system for storing transcription")
+                        manager.initialize()
+                    }
+                    
+                    // Store with metadata
+                    val metadata = mapOf(
+                        "source" to "voice_transcription",
+                        "classification" to "contextable"
+                    )
+                    
+                    val success = manager.storeMemory(transcription, metadata)
+                    if (success) {
+                        Log.d(TAG, "Successfully stored transcription in memory: \"${transcription.take(50)}...\"")
+                    } else {
+                        Log.w(TAG, "Failed to store transcription in memory")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error storing transcription in memory", e)
+                }
+            }
+        } ?: run {
+            Log.w(TAG, "Memory manager not available, cannot store transcription")
+        }
     }
     
     private class SharedTranscriptionResource

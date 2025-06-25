@@ -113,6 +113,9 @@ dependencies {
     
     // MediaPipe GenAI for LLM inference
     implementation 'com.google.mediapipe:tasks-genai:0.10.24'
+    
+    // AI Edge RAG dependencies for memory storage and retrieval
+    // implementation 'com.google.ai.edge.localagents:localagents-rag:0.1.0' // Currently under development
 
     // Debug tools for Compose
     debugImplementation 'androidx.compose.ui:ui-tooling'
